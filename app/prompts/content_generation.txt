@@ -1,0 +1,21 @@
+Generate one approval-ready LinkedIn post using:
+
+User profile:
+{profile}
+
+Relevant memory:
+{memory}
+
+Research:
+{research}
+
+Writing samples:
+{writing_samples}
+
+Topic:
+{topic}
+
+Constraints:
+- Match user's tone.
+- Do not invent statistics.
+- Keep it polished but natural.
