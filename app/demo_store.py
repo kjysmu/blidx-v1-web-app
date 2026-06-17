@@ -139,10 +139,10 @@ class DemoStore:
                 state["content_bank"].insert(0, memory)
 
             post = None
-            if self._wants_draft(content) or self._is_affirmative_draft_request(state, content):
-                topic = self._extract_topic(content)
-                if not self._wants_draft(content):
-                    topic = self._topic_from_context(state)
+            wants_draft = self._wants_draft(content)
+            followup_draft = self._is_affirmative_draft_request(state, content)
+            if wants_draft or followup_draft:
+                topic = self._topic_from_context(state) if followup_draft else self._extract_topic(content)
                 post = self._draft(state, topic, "chat")
                 state["posts"].insert(0, post)
                 reply = (

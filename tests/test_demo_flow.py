@@ -181,5 +181,7 @@ def test_mira_understands_draft_follow_up_after_angle_prompt():
     payload = response.json()
     assert "draft_created" in payload["actions"]
     assert payload["post"]["status"] == "pending"
+    assert payload["post"]["title"] != "Draft it"
+    assert "What does draft it" not in payload["post"]["content"]
 
     client.post("/api/reset")
