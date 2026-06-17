@@ -157,6 +157,7 @@ def test_mira_fallback_varies_chat_replies_and_offers_angles():
     assert old_repeated_line not in first["reply"]
     assert old_repeated_line not in second["reply"]
     assert first["reply"] != second["reply"]
+    assert first["post"] is None
     assert "angle" in second["reply"].lower()
 
     client.post("/api/reset")

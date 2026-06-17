@@ -541,6 +541,19 @@ class DemoStore:
     @staticmethod
     def _wants_draft(content: str) -> bool:
         lowered = content.lower()
+        conversational_question_signals = (
+            "what should",
+            "what can",
+            "any ideas",
+            "give me ideas",
+            "suggest",
+            "angle",
+            "topic",
+        )
+        if lowered.strip().endswith("?") and any(
+            signal in lowered for signal in conversational_question_signals
+        ):
+            return False
         draft_signals = (
             "draft",
             "write a post",
@@ -548,10 +561,10 @@ class DemoStore:
             "turn this into",
             "linkedin post",
             "make a post",
-            "next post",
-            "post about",
         )
-        return any(signal in lowered for signal in draft_signals)
+        return any(signal in lowered for signal in draft_signals) or lowered.startswith(
+            "post about "
+        )
 
     @staticmethod
     def _looks_like_memory(content: str) -> bool:
