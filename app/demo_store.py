@@ -569,6 +569,10 @@ class DemoStore:
     @staticmethod
     def _looks_like_memory(content: str) -> bool:
         lowered = content.lower()
+        if "?" in content or lowered.startswith(
+            ("what should", "what can", "how should", "can you", "give me", "suggest")
+        ):
+            return False
         signals = (
             "i attended",
             "i met",
@@ -876,7 +880,19 @@ class DemoStore:
                 "A good next message is: “Give me angles from the AI event.”"
             )
 
-        if any(phrase in lowered for phrase in ("angle", "idea", "what should", "suggest", "topic")):
+        if "what should" in lowered:
+            if latest:
+                return (
+                    "I’d post about the tension you already have in the Content Bank: "
+                    "AI is making the work feel more possible, but mental health still depends on trust, safety, and human connection.\n\n"
+                    f"The best starting point is this moment: “{latest}”\n\n"
+                    "That gives the post a real founder anchor instead of a generic AI opinion. If you want, ask me for angles or say “draft it.”"
+                )
+            return (
+                "I’d start with one real moment from this week. A post becomes much stronger when it begins with something you actually saw, built, learned, or questioned."
+            )
+
+        if any(phrase in lowered for phrase in ("angle", "idea", "suggest", "topic")):
             if latest:
                 return (
                     f"I see three possible angles for {company}:\n\n"
