@@ -334,13 +334,13 @@ class DemoStore:
         with self.lock:
             state = self._initial_state()
             self._write(state)
-            return deepcopy(state)
+            return self._public_state(state)
 
     def seed_test_scenario(self) -> dict:
         with self.lock:
             state = self._malia_test_state()
             self._write(state)
-            return deepcopy(state)
+            return self._public_state(state)
 
     def _set_status(self, post_id: str, status: str) -> dict | None:
         with self.lock:
