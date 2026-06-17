@@ -139,8 +139,10 @@ class DemoStore:
                 state["content_bank"].insert(0, memory)
 
             post = None
-            if self._wants_draft(content):
+            if self._wants_draft(content) or self._is_affirmative_draft_request(state, content):
                 topic = self._extract_topic(content)
+                if not self._wants_draft(content):
+                    topic = self._topic_from_context(state)
                 post = self._draft(state, topic, "chat")
                 state["posts"].insert(0, post)
                 reply = (
@@ -620,6 +622,46 @@ class DemoStore:
         return topic or content.strip()
 
     @staticmethod
+    def _is_affirmative_draft_request(state: dict, content: str) -> bool:
+        lowered = content.lower().strip(" .!?,")
+        affirmative = (
+            "yes",
+            "yes please",
+            "go ahead",
+            "do it",
+            "draft it",
+            "please draft",
+            "make it",
+            "turn it into a post",
+            "sounds good",
+        )
+        if lowered not in affirmative:
+            return False
+        recent_mira = [
+            message
+            for message in state.get("messages", [])[-4:]
+            if message.get("role") == "mira"
+        ]
+        return any(
+            "draft" in (message.get("content") or "").lower()
+            for message in recent_mira
+        )
+
+    @staticmethod
+    def _topic_from_context(state: dict) -> str:
+        if state.get("content_bank"):
+            latest = state["content_bank"][0]["raw_text"]
+            if "ai" in latest.lower() and "mental" in json.dumps(state.get("profile", {})).lower():
+                return "human connection versus AI in mental health"
+            return latest[:140]
+        messages = [
+            message.get("content", "")
+            for message in state.get("messages", [])
+            if message.get("role") == "user"
+        ]
+        return messages[-1] if messages else "a founder insight from this week"
+
+    @staticmethod
     def _provider_label(post: dict) -> str:
         provider = post.get("generation_provider") or "template"
         return "Claude" if provider.startswith("Anthropic") else "your profile and Content Bank context"
@@ -799,20 +841,89 @@ class DemoStore:
     def _fallback_chat_reply(state: dict, content: str) -> str:
         profile = state.get("profile", {})
         company = profile.get("company_name") or "your company"
-        bank_count = len(state.get("content_bank", []))
-        if "linkedin" in content.lower() or "post" in content.lower():
+        memories = state.get("content_bank", [])
+        bank_count = len(memories)
+        lowered = content.lower()
+        latest = memories[0]["raw_text"] if memories else ""
+        audience = ", ".join(profile.get("audience") or ["your audience"])
+
+        if any(word in lowered for word in ("hi", "hello", "hey")) and len(content.split()) <= 4:
+            return (
+                f"Hi. I’m here with the {company} context. You can tell me what happened this week, "
+                "ask for angles, or ask me to draft a LinkedIn post when you are ready."
+            )
+
+        if any(phrase in lowered for phrase in ("what can you do", "how does this work", "help me")):
+            return (
+                "I can help in four practical ways:\n\n"
+                "1/ Capture a real moment into the Content Bank.\n"
+                "2/ Turn it into 2-3 LinkedIn angles.\n"
+                "3/ Draft a post in your voice.\n"
+                "4/ Move the approved draft toward LinkedIn posting.\n\n"
+                "A good next message is: “Give me angles from the AI event.”"
+            )
+
+        if any(phrase in lowered for phrase in ("angle", "idea", "what should", "suggest", "topic")):
+            if latest:
+                return (
+                    f"I see three possible angles for {company}:\n\n"
+                    f"1/ Personal founder moment: use “{latest}” as the opening, then reflect on what it changed in your thinking.\n\n"
+                    "2/ Industry point of view: talk about why AI can increase access, but mental health still needs trust and human connection.\n\n"
+                    f"3/ Audience question: ask {audience} where they believe technology should support care, and where it should stay in the background.\n\n"
+                    "The strongest one for LinkedIn is angle 2, because it connects product, care, and founder judgment. Want me to draft that?"
+                )
+            return (
+                "I can suggest angles, but I need one real moment first. Tell me something that happened this week: an event, customer conversation, launch, lesson, or tension you noticed."
+            )
+
+        if "linkedin" in lowered or "post" in lowered or "content" in lowered:
+            if latest:
+                return (
+                    f"For {company}, I would not start with a generic thought. I would start with the freshest real moment:\n\n"
+                    f"“{latest}”\n\n"
+                    "Then I’d build the post around one tension, one lesson, and one question for the reader. "
+                    "If you want the fastest path, say “draft it” and I’ll create the draft card."
+                )
             return (
                 f"Yes. For {company}, I’d turn this into a post by choosing one concrete moment, "
-                "one clear point of view, and one question for the audience. If you want, write "
-                "“Draft a post about …” and I’ll create the draft card."
+                "one clear point of view, and one question for the audience. Share the moment first, then I can draft from it."
             )
+
+        if any(phrase in lowered for phrase in ("too long", "shorter", "better", "improve", "change")):
+            pending = next((post for post in state.get("posts", []) if post.get("status") == "pending"), None)
+            if pending:
+                return (
+                    "I can revise the active draft. Use the Edit button on the draft card and tell me the direction, for example: "
+                    "“shorter and more personal” or “make the opening stronger.”"
+                )
+
         if bank_count:
+            variants = [
+                (
+                    f"I’d connect your message back to the latest Content Bank moment: “{latest}”. "
+                    "There is a useful founder insight hiding there. Do you want an angle, or should I draft it?"
+                ),
+                (
+                    f"The strongest thread I see is the tension between speed and trust. For {company}, that can become a post about "
+                    "where AI helps the work move faster, and where human connection still has to lead. Want me to turn that into a draft?"
+                ),
+                (
+                    "I would make this more specific before drafting. One good framing is:\n\n"
+                    "“AI made the work feel more possible, but it also made me think harder about what should stay human.”\n\n"
+                    "That gives the post a clear emotional and strategic center."
+                ),
+            ]
+            index = (len(content) + len(state.get("messages", []))) % len(variants)
+            return variants[index]
+
+        if "?" in content:
             return (
-                f"I have {bank_count} Content Bank entries to work from. The strongest next move is to pick one "
-                "fresh moment and turn it into a specific founder insight. Try: “Draft a post about the AI event and human connection.”"
+                "My short answer: yes, but we should anchor it in a real moment so it does not sound generic. "
+                "Give me one detail from the week, and I’ll help shape it into a LinkedIn-ready point of view."
             )
+
         return (
-            "I can help with that. Give me either a topic or one real moment from this week, and I’ll help turn it into a LinkedIn angle."
+            "That can become useful content if we make it concrete. What is the real moment behind it: something you saw, built, learned, questioned, or changed your mind about?"
         )
 
 

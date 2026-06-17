@@ -139,3 +139,44 @@ def test_publish_uses_manual_fallback_without_linkedin_token():
     assert data["fallback_url"] == "https://www.linkedin.com/feed/"
 
     client.post("/api/reset")
+
+
+def test_mira_fallback_varies_chat_replies_and_offers_angles():
+    client.post("/api/seed-test-scenario")
+
+    first = client.post(
+        "/api/chat/message",
+        json={"message": "What should I post about today?"},
+    ).json()
+    second = client.post(
+        "/api/chat/message",
+        json={"message": "Give me angles from the AI event"},
+    ).json()
+
+    old_repeated_line = "I have 3 Content Bank entries to work from"
+    assert old_repeated_line not in first["reply"]
+    assert old_repeated_line not in second["reply"]
+    assert first["reply"] != second["reply"]
+    assert "angle" in second["reply"].lower()
+
+    client.post("/api/reset")
+
+
+def test_mira_understands_draft_follow_up_after_angle_prompt():
+    client.post("/api/seed-test-scenario")
+
+    client.post(
+        "/api/chat/message",
+        json={"message": "Give me angles from the AI event"},
+    )
+    response = client.post(
+        "/api/chat/message",
+        json={"message": "yes please"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "draft_created" in payload["actions"]
+    assert payload["post"]["status"] == "pending"
+
+    client.post("/api/reset")
