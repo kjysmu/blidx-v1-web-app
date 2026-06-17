@@ -88,7 +88,10 @@ class LinkedInClient:
                 json=payload,
             )
             response.raise_for_status()
-            return response.json() if response.content else {"status": "published"}
+            data = response.json() if response.content else {"status": "published"}
+            if response.headers.get("x-restli-id"):
+                data["id"] = response.headers["x-restli-id"]
+            return data
 
 
 def linkedin_share_url() -> str:

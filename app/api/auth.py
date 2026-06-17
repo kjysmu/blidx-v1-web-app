@@ -1,4 +1,7 @@
 from fastapi import APIRouter
+from fastapi.responses import RedirectResponse
+
+from app.demo_store import demo_store
 from app.schemas.auth import RegisterRequest, LoginRequest, AuthResponse
 from app.integrations.linkedin import LinkedInClient
 
@@ -35,13 +38,12 @@ def login(payload: LoginRequest):
 @router.get("/linkedin/callback")
 def linkedin_callback(code: str | None = None, error: str | None = None):
     if error:
-        return {"connected": False, "error": error}
+        return RedirectResponse(url=f"/?linkedin=error")
     if not code:
-        return {"connected": False, "error": "Missing LinkedIn authorization code"}
+        return RedirectResponse(url="/?linkedin=missing_code")
 
-    token = LinkedInClient().exchange_code_for_token(code)
-    return {
-        "connected": True,
-        "expires_in": token.get("expires_in"),
-        "note": "LinkedIn token exchange succeeded. Persistent token storage comes with production auth.",
-    }
+    linkedin = LinkedInClient()
+    token = linkedin.exchange_code_for_token(code)
+    profile = linkedin.get_userinfo(token["access_token"])
+    demo_store.store_linkedin_connection(token, profile)
+    return RedirectResponse(url="/?linkedin=connected")

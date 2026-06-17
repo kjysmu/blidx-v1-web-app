@@ -23,6 +23,7 @@ class DemoStore:
             self._write(self._initial_state())
 
     def _initial_state(self) -> dict:
+        now = utc_now().isoformat()
         return {
             "user": {
                 "id": str(uuid.uuid4()),
@@ -50,17 +51,32 @@ class DemoStore:
             },
             "content_bank": [],
             "posts": [],
+            "messages": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "role": "mira",
+                    "content": "Your pipeline is clear. What should we turn into your next post?",
+                    "created_at": now,
+                    "kind": "message",
+                }
+            ],
+            "linkedin": {
+                "connected": False,
+                "access_token": None,
+                "profile": None,
+                "connected_at": None,
+            },
         }
 
     def _read(self) -> dict:
-        return json.loads(self.path.read_text())
+        return self._normalize_state(json.loads(self.path.read_text()))
 
     def _write(self, state: dict) -> None:
         self.path.write_text(json.dumps(state, indent=2))
 
     def snapshot(self) -> dict:
         with self.lock:
-            return deepcopy(self._read())
+            return self._public_state(self._read())
 
     def update_profile(self, profile: dict) -> dict:
         with self.lock:
@@ -91,8 +107,71 @@ class DemoStore:
             state = self._read()
             post = self._draft(state, topic, source)
             state["posts"].insert(0, post)
+            self._append_message(
+                state,
+                "mira",
+                f"I created a review-ready draft for “{topic.strip()}”. You can edit it, save it, approve it, or send it to LinkedIn.",
+                kind="draft_created",
+                post_id=post["id"],
+            )
             self._write(state)
             return deepcopy(post)
+
+    def chat(self, content: str) -> dict:
+        content = content.strip()
+        with self.lock:
+            state = self._read()
+            self._append_message(state, "user", content)
+
+            if self._is_off_topic(content):
+                reply = (
+                    "I’m going to keep us inside Blidx for now: your LinkedIn content, "
+                    "Content Bank, drafts, publishing, and founder voice. What should we turn "
+                    "into a post?"
+                )
+                self._append_message(state, "mira", reply, kind="redirect")
+                self._write(state)
+                return {"reply": reply, "actions": ["redirect"], "post": None, "state": self._public_state(state)}
+
+            memory = None
+            if self._looks_like_memory(content) and not self._wants_draft(content):
+                memory = self._memory_entry(content)
+                state["content_bank"].insert(0, memory)
+
+            post = None
+            if self._wants_draft(content):
+                topic = self._extract_topic(content)
+                post = self._draft(state, topic, "chat")
+                state["posts"].insert(0, post)
+                reply = (
+                    f"Done. I turned that into a draft using {self._provider_label(post)} "
+                    "and placed it below for review."
+                )
+                actions = ["draft_created"]
+                kind = "draft_created"
+                post_id = post["id"]
+            elif memory:
+                reply = (
+                    "Saved that to your Content Bank. It has the shape of a personal insight, "
+                    "so I can use it as context for the next post. Want me to draft from this angle?"
+                )
+                actions = ["memory_saved"]
+                kind = "message"
+                post_id = None
+            else:
+                reply = self._generate_chat_reply(state, content) or self._fallback_chat_reply(state, content)
+                actions = ["reply"]
+                kind = "message"
+                post_id = None
+
+            self._append_message(state, "mira", reply, kind=kind, post_id=post_id)
+            self._write(state)
+            return {
+                "reply": reply,
+                "actions": actions,
+                "post": deepcopy(post),
+                "state": self._public_state(state),
+            }
 
     def edit_post(self, post_id: str, instructions: str) -> dict | None:
         with self.lock:
@@ -152,6 +231,98 @@ class DemoStore:
             post["updated_at"] = now.isoformat()
             self._write(state)
             return deepcopy(post)
+
+    def publish_post(self, post_id: str) -> dict | None:
+        with self.lock:
+            state = self._read()
+            post = self._find_post(state, post_id)
+            if post is None:
+                return None
+
+            linkedin = state.get("linkedin") or {}
+            access_token = linkedin.get("access_token")
+            if not access_token:
+                return {
+                    "published": False,
+                    "mode": "manual_fallback",
+                    "fallback_url": "https://www.linkedin.com/feed/",
+                    "message": (
+                        "LinkedIn is not connected yet. The draft can be copied and posted "
+                        "manually, then tracked here with the LinkedIn URL."
+                    ),
+                    "post": deepcopy(post),
+                }
+
+            from app.integrations.linkedin import LinkedInClient
+
+            try:
+                published = LinkedInClient().publish_post(access_token, post["content"])
+            except Exception as exc:
+                return {
+                    "published": False,
+                    "mode": "manual_fallback",
+                    "fallback_url": "https://www.linkedin.com/feed/",
+                    "message": "LinkedIn auto-post failed, so use the manual fallback.",
+                    "error": str(exc)[:240],
+                    "post": deepcopy(post),
+                }
+
+            now = utc_now()
+            post["status"] = "published"
+            post["published_at"] = now.isoformat()
+            post["published_url"] = published.get("url")
+            post["linkedin_post_id"] = published.get("id") or published.get("status")
+            post["updated_at"] = now.isoformat()
+            self._append_message(
+                state,
+                "mira",
+                "Published to LinkedIn and saved it in your Library.",
+                kind="published",
+                post_id=post["id"],
+            )
+            self._write(state)
+            return {"published": True, "mode": "oauth", "post": deepcopy(post)}
+
+    def track_linkedin_url(self, post_id: str, url: str | None) -> dict | None:
+        with self.lock:
+            state = self._read()
+            post = self._find_post(state, post_id)
+            if post is None:
+                return None
+
+            now = utc_now()
+            post["status"] = "published"
+            post["published_at"] = now.isoformat()
+            post["published_url"] = (url or "").strip() or None
+            post["updated_at"] = now.isoformat()
+            self._append_message(
+                state,
+                "mira",
+                "Great, I marked this as posted and kept the LinkedIn link in your Library.",
+                kind="published",
+                post_id=post["id"],
+            )
+            self._write(state)
+            return deepcopy(post)
+
+    def store_linkedin_connection(self, token: dict, profile: dict | None = None) -> dict:
+        with self.lock:
+            state = self._read()
+            state["linkedin"] = {
+                "connected": True,
+                "access_token": token.get("access_token"),
+                "profile": profile or {},
+                "connected_at": utc_now().isoformat(),
+                "expires_in": token.get("expires_in"),
+            }
+            self._append_message(
+                state,
+                "mira",
+                "LinkedIn is connected. Future approved drafts can be published directly.",
+                kind="integration",
+            )
+            self._write(state)
+            return self._public_state(state)["linkedin"]
 
     def save_post(self, post_id: str) -> dict | None:
         return self._set_status(post_id, "draft")
@@ -254,7 +425,56 @@ class DemoStore:
             "name": "Malia founder-test scenario",
             "next_prompt": "human connection versus AI in mental health",
         }
+        state["messages"] = [
+            {
+                "id": str(uuid.uuid4()),
+                "role": "mira",
+                "content": (
+                    "Hi Malia, I loaded your HeyJuni profile and three Content Bank moments. "
+                    "You can chat with me naturally, or ask me to draft a post from one of them."
+                ),
+                "created_at": utc_now().isoformat(),
+                "kind": "message",
+            }
+        ]
         return state
+
+    @staticmethod
+    def _normalize_state(state: dict) -> dict:
+        state.setdefault("content_bank", [])
+        state.setdefault("posts", [])
+        state.setdefault(
+            "messages",
+            [
+                {
+                    "id": str(uuid.uuid4()),
+                    "role": "mira",
+                    "content": "Your pipeline is clear. What should we turn into your next post?",
+                    "created_at": utc_now().isoformat(),
+                    "kind": "message",
+                }
+            ],
+        )
+        state.setdefault(
+            "linkedin",
+            {
+                "connected": False,
+                "access_token": None,
+                "profile": None,
+                "connected_at": None,
+            },
+        )
+        return state
+
+    @staticmethod
+    def _public_state(state: dict) -> dict:
+        public = deepcopy(state)
+        linkedin = public.setdefault("linkedin", {})
+        linkedin.pop("access_token", None)
+        linkedin["connected"] = bool(state.get("linkedin", {}).get("access_token")) or bool(
+            linkedin.get("connected")
+        )
+        return public
 
     @staticmethod
     def _find_post(state: dict, post_id: str) -> dict | None:
@@ -280,6 +500,129 @@ class DemoStore:
     def _potential(text: str) -> str:
         high_signals = ("first", "learned", "failed", "closed", "realized", "why")
         return "high" if any(signal in text.lower() for signal in high_signals) else "medium"
+
+    @staticmethod
+    def _append_message(
+        state: dict,
+        role: str,
+        content: str,
+        *,
+        kind: str = "message",
+        post_id: str | None = None,
+    ) -> dict:
+        message = {
+            "id": str(uuid.uuid4()),
+            "role": role,
+            "content": content,
+            "created_at": utc_now().isoformat(),
+            "kind": kind,
+        }
+        if post_id:
+            message["post_id"] = post_id
+        state.setdefault("messages", []).append(message)
+        state["messages"] = state["messages"][-40:]
+        return message
+
+    @staticmethod
+    def _memory_entry(raw_text: str, category: str | None = None) -> dict:
+        category = category or DemoStore._categorize(raw_text)
+        return {
+            "id": str(uuid.uuid4()),
+            "raw_text": raw_text.strip(),
+            "category": category,
+            "tags": [category.title()],
+            "freshness": "fresh",
+            "content_potential": DemoStore._potential(raw_text),
+            "created_at": utc_now().isoformat(),
+        }
+
+    @staticmethod
+    def _wants_draft(content: str) -> bool:
+        lowered = content.lower()
+        draft_signals = (
+            "draft",
+            "write a post",
+            "create a post",
+            "turn this into",
+            "linkedin post",
+            "make a post",
+            "next post",
+            "post about",
+        )
+        return any(signal in lowered for signal in draft_signals)
+
+    @staticmethod
+    def _looks_like_memory(content: str) -> bool:
+        lowered = content.lower()
+        signals = (
+            "i attended",
+            "i met",
+            "i spoke",
+            "i realized",
+            "i learned",
+            "we launched",
+            "we rebuilt",
+            "today",
+            "this week",
+        )
+        return any(signal in lowered for signal in signals)
+
+    @staticmethod
+    def _is_off_topic(content: str) -> bool:
+        lowered = content.lower()
+        off_topic = (
+            "weather",
+            "recipe",
+            "sports score",
+            "movie recommendation",
+            "homework",
+            "dating advice",
+            "stock tip",
+            "crypto",
+        )
+        content_terms = (
+            "post",
+            "linkedin",
+            "content",
+            "draft",
+            "audience",
+            "founder",
+            "malia",
+            "heyjuni",
+            "blidx",
+            "mental health",
+            "ai",
+            "work",
+            "startup",
+        )
+        return any(term in lowered for term in off_topic) and not any(
+            term in lowered for term in content_terms
+        )
+
+    @staticmethod
+    def _extract_topic(content: str) -> str:
+        topic = content.strip()
+        lowered = topic.lower()
+        prefixes = (
+            "draft a post about",
+            "write a post about",
+            "create a post about",
+            "make a post about",
+            "turn this into a linkedin post:",
+            "turn this into a post:",
+            "linkedin post about",
+            "post about",
+        )
+        for prefix in prefixes:
+            if lowered.startswith(prefix):
+                topic = topic[len(prefix) :].strip(" :.-")
+                break
+        return topic or content.strip()
+
+    @staticmethod
+    def _provider_label(post: dict) -> str:
+        provider = post.get("generation_provider") or "template"
+        return "Claude" if provider.startswith("Anthropic") else "your profile and Content Bank context"
 
     @staticmethod
     def _draft(state: dict, topic: str, source: str) -> dict:
@@ -330,29 +673,40 @@ class DemoStore:
     @staticmethod
     def _fallback_draft_text(state: dict, topic: str) -> str:
         profile = state["profile"]
-        memory = state["content_bank"][0] if state["content_bank"] else None
+        memories = state["content_bank"][:3]
+        memory = memories[0] if memories else None
         company = profile.get("company_name") or "my company"
         audience = ", ".join(profile.get("audience") or ["founders"])
         memory_text = memory["raw_text"] if memory else ""
         hook = topic.strip().rstrip(".")
-        personal_block = (
-            f"\n\nA recent moment made this concrete for me: {memory_text}"
-            if memory_text
-            else (
-                "\n\nBuilding this in practice has made one thing clear: "
-                "consistency comes from owning the workflow, not waiting for inspiration."
+        expertise = ", ".join(profile.get("expertise") or [])
+        if "mental health" in (profile.get("industry") or "").lower():
+            return (
+                f"What does {hook} ask from us, beyond the technology?\n\n"
+                f"At {company}, this question keeps coming back to one thing: people do not only need access. "
+                "They need to feel seen, safe, and connected.\n\n"
+                f"A recent moment made this more concrete for me: {memory_text or 'I saw how quickly AI can make hard work feel more possible, and also how easily it can make human care feel abstract.'}\n\n"
+                "That tension matters.\n\n"
+                "1/ AI can reduce friction.\n"
+                "2/ It can help founders move faster.\n"
+                "3/ But in mental health, the human layer cannot become an afterthought.\n\n"
+                f"For {audience}, I think the question is not whether AI belongs in the future of care. "
+                "It is where it should support the relationship, and where the relationship must stay central.\n\n"
+                "What part of care do you believe should never be automated?"
             )
+
+        personal_block = memory_text or (
+            "A recent building moment reminded me that consistent content comes from noticing the work while it is happening."
         )
         return (
-            f"{hook.capitalize()} is not mainly a content problem.\n\n"
-            f"It is a workflow problem.\n\n"
-            f"At {company}, I keep returning to a simple principle: the system should "
-            f"carry the work forward, while the founder provides judgment and context."
-            f"{personal_block}\n\n"
-            f"For {audience}, the useful question is not \"Can AI write this?\" "
-            f"It is \"Can the system reliably turn real work into a clear point of view?\"\n\n"
-            f"That is the standard I think founder-led content should meet.\n\n"
-            f"What part of your content workflow creates the most friction today?"
+            f"I keep thinking about {hook}.\n\n"
+            f"At {company}, the best content does not start as content. It starts as a real moment from the work.\n\n"
+            f"For example: {personal_block}\n\n"
+            "That is the part I want to protect as AI becomes more present in how founders communicate.\n\n"
+            "The value is not only speed. It is helping a founder notice what they already learned, sharpen it, "
+            f"and share it with {audience} in a way that feels specific.\n\n"
+            f"My working principle: use the system for structure, but keep the judgment, context, and point of view human.\n\n"
+            f"Curious how others in {expertise or 'this space'} think about this."
         )
 
     @staticmethod
@@ -412,6 +766,53 @@ class DemoStore:
                 "5. Call to connection: invite readers into the conversation.\n"
                 "6. Measured but passionate: conviction with humility.",
             ]
+        )
+
+    @staticmethod
+    def _generate_chat_reply(state: dict, content: str) -> str | None:
+        provider = ClaudeProvider()
+        if not provider.configured:
+            return None
+
+        system_prompt = (
+            "You are Mira, Blidx's content operating partner. You are a focused chatbot, "
+            "not a generic assistant. Help the user clarify LinkedIn angles, Content Bank "
+            "entries, draft direction, and publishing workflow. Keep replies warm, concise, "
+            "and practical. If the user asks for a draft, say you can draft it and ask for "
+            "one missing detail only if essential."
+        )
+        messages = state.get("messages", [])[-8:]
+        prompt = "\n\n".join(
+            [
+                "USER PROFILE\n" + json.dumps(state.get("profile", {}), indent=2),
+                "CONTENT BANK\n" + json.dumps(state.get("content_bank", [])[:5], indent=2),
+                "RECENT CHAT\n" + json.dumps(messages, indent=2),
+                "LATEST USER MESSAGE\n" + content,
+            ]
+        )
+        try:
+            return provider.generate(prompt, system_prompt)
+        except (httpx.HTTPError, RuntimeError, ValueError):
+            return None
+
+    @staticmethod
+    def _fallback_chat_reply(state: dict, content: str) -> str:
+        profile = state.get("profile", {})
+        company = profile.get("company_name") or "your company"
+        bank_count = len(state.get("content_bank", []))
+        if "linkedin" in content.lower() or "post" in content.lower():
+            return (
+                f"Yes. For {company}, I’d turn this into a post by choosing one concrete moment, "
+                "one clear point of view, and one question for the audience. If you want, write "
+                "“Draft a post about …” and I’ll create the draft card."
+            )
+        if bank_count:
+            return (
+                f"I have {bank_count} Content Bank entries to work from. The strongest next move is to pick one "
+                "fresh moment and turn it into a specific founder insight. Try: “Draft a post about the AI event and human connection.”"
+            )
+        return (
+            "I can help with that. Give me either a topic or one real moment from this week, and I’ll help turn it into a LinkedIn angle."
         )
 
 

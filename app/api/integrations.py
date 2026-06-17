@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.demo_store import demo_store
 from app.integrations.linkedin import LinkedInClient, linkedin_share_url
 
 router = APIRouter()
@@ -19,6 +20,8 @@ class LinkedInConnectResponse(BaseModel):
 @router.get("/status")
 def integration_status() -> dict:
     linkedin = LinkedInClient()
+    state = demo_store.snapshot()
+    linkedin_state = state.get("linkedin") or {}
     return {
         "anthropic": {
             "configured": bool(settings.ANTHROPIC_API_KEY),
@@ -26,6 +29,9 @@ def integration_status() -> dict:
         },
         "linkedin": {
             "configured": linkedin.configured,
+            "connected": bool(linkedin_state.get("connected")),
+            "profile": linkedin_state.get("profile"),
+            "connected_at": linkedin_state.get("connected_at"),
             "redirect_uri": settings.LINKEDIN_REDIRECT_URI,
             "scopes": settings.LINKEDIN_SCOPES,
             "fallback_url": linkedin_share_url(),
@@ -74,14 +80,13 @@ def linkedin_callback(code: str | None = None, error: str | None = None) -> dict
     linkedin = LinkedInClient()
     try:
         token = linkedin.exchange_code_for_token(code)
+        profile = linkedin.get_userinfo(token["access_token"])
+        demo_store.store_linkedin_connection(token, profile)
     except Exception as exc:
         raise HTTPException(status_code=502, detail="LinkedIn token exchange failed") from exc
 
     return {
         "connected": True,
         "expires_in": token.get("expires_in"),
-        "note": (
-            "Token exchange succeeded. Persistent token storage is the next step "
-            "after production auth is connected."
-        ),
+        "note": "LinkedIn token exchange succeeded and is stored for this staging demo.",
     }

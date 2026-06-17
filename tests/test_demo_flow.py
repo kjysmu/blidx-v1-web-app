@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.main import app
 
 client = TestClient(app)
@@ -79,6 +80,62 @@ def test_seed_test_scenario_makes_app_immediately_testable():
     assert draft_response.status_code == 200
     draft = draft_response.json()
     assert draft["status"] == "pending"
-    assert draft["generation_provider"] in {"template", "Anthropic claude-sonnet-4-6"}
+    assert draft["generation_provider"] in {"template", f"Anthropic {settings.ANTHROPIC_MODEL}"}
+    assert "is not mainly a content problem" not in draft["content"]
+
+    client.post("/api/reset")
+
+
+def test_mira_chat_creates_a_draft_and_records_messages():
+    client.post("/api/seed-test-scenario")
+
+    response = client.post(
+        "/api/chat/message",
+        json={"message": "Draft a post about human connection versus AI in mental health"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "draft_created" in payload["actions"]
+    assert payload["post"]["status"] == "pending"
+    assert "human" in payload["post"]["content"].lower()
+    assert len(payload["state"]["messages"]) >= 3
+    assert payload["state"]["messages"][-2]["role"] == "user"
+    assert payload["state"]["messages"][-1]["role"] == "mira"
+
+    client.post("/api/reset")
+
+
+def test_mira_redirects_off_topic_chat_without_creating_draft():
+    client.post("/api/reset")
+
+    response = client.post(
+        "/api/chat/message",
+        json={"message": "What is the weather today?"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["actions"] == ["redirect"]
+    assert payload["post"] is None
+    assert payload["state"]["posts"] == []
+
+    client.post("/api/reset")
+
+
+def test_publish_uses_manual_fallback_without_linkedin_token():
+    client.post("/api/seed-test-scenario")
+    draft = client.post(
+        "/api/chat/message",
+        json={"message": "Draft a post about human connection versus AI in mental health"},
+    ).json()["post"]
+
+    response = client.post(f"/api/drafts/{draft['id']}/publish")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["published"] is False
+    assert data["mode"] == "manual_fallback"
+    assert data["fallback_url"] == "https://www.linkedin.com/feed/"
 
     client.post("/api/reset")

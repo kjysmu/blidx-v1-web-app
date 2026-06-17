@@ -44,6 +44,14 @@ class ApprovePayload(BaseModel):
     scheduled_at: str | None = None
 
 
+class ChatPayload(BaseModel):
+    message: str = Field(min_length=2)
+
+
+class LinkedInTrackPayload(BaseModel):
+    url: str | None = None
+
+
 @router.get("/state")
 def get_state() -> dict[str, Any]:
     return demo_store.snapshot()
@@ -64,6 +72,11 @@ def create_draft(payload: DraftPayload) -> dict[str, Any]:
     return demo_store.create_post(payload.topic, payload.source)
 
 
+@router.post("/chat/message")
+def chat_message(payload: ChatPayload) -> dict[str, Any]:
+    return demo_store.chat(payload.message)
+
+
 @router.post("/drafts/{draft_id}/edit")
 def edit_draft(draft_id: str, payload: EditPayload) -> dict[str, Any]:
     post = demo_store.edit_post(draft_id, payload.instructions)
@@ -77,6 +90,22 @@ def approve_draft(draft_id: str, payload: ApprovePayload) -> dict[str, Any]:
     post = demo_store.approve_post(
         draft_id, payload.schedule_type, payload.scheduled_at
     )
+    if post is None:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return post
+
+
+@router.post("/drafts/{draft_id}/publish")
+def publish_draft(draft_id: str) -> dict[str, Any]:
+    result = demo_store.publish_post(draft_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return result
+
+
+@router.post("/drafts/{draft_id}/track-linkedin-url")
+def track_linkedin_url(draft_id: str, payload: LinkedInTrackPayload) -> dict[str, Any]:
+    post = demo_store.track_linkedin_url(draft_id, payload.url)
     if post is None:
         raise HTTPException(status_code=404, detail="Draft not found")
     return post

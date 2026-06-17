@@ -141,6 +141,11 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   background: white; border: 1px solid var(--line); line-height: 1.6;
 }
 .bubble.mira { border-top-left-radius: 5px; }
+.bubble.user {
+  justify-self: end; border-top-right-radius: 5px;
+  background: #f5f2ff; border-color: #d7cff5;
+}
+.bubble.typing { color: var(--muted); }
 .composer {
   position: fixed; bottom: 0; margin-left: -34px;
   width: min(calc(100% - 236px), 944px); padding: 16px 34px 22px;

@@ -70,7 +70,17 @@ function bindGlobal() {
     button.onclick = () => { ui.tab = button.dataset.tab; ui.modal = null; render(); };
   });
   document.querySelectorAll('[data-action="new-draft"]').forEach((button) => {
-    button.onclick = () => { ui.tab = "chat"; render(); setTimeout(() => document.querySelector("#draft-topic")?.focus(), 0); };
+    button.onclick = () => {
+      ui.tab = "chat";
+      render();
+      setTimeout(() => {
+        const input = document.querySelector("#chat-message");
+        if (input) {
+          input.value = "Draft a post about ";
+          input.focus();
+        }
+      }, 0);
+    };
   });
   document.querySelectorAll('[data-action="seed-demo"]').forEach((button) => {
     button.onclick = seedDemo;
@@ -89,40 +99,52 @@ function render() {
 
 function renderChat() {
   const profile = ui.state.profile;
-  const activeDraft = ui.state.posts.find((post) => post.status === "pending");
+  const activeDrafts = ui.state.posts.filter((post) => post.status === "pending");
   const published = ui.state.posts.filter((post) => post.status === "published").length;
   const goal = profile.posting_frequency === "5+_per_week" ? 5 : profile.posting_frequency === "3-4x_per_week" ? 3 : 1;
+  const messages = ui.state.messages?.length ? ui.state.messages : [{
+    role: "mira",
+    content: "Your pipeline is clear. What should we turn into your next post?",
+  }];
   return `
     <section class="page">
       <div class="eyebrow">Your content workdesk</div>
       <h1>Good ${new Date().getHours() < 12 ? "morning" : "afternoon"}, ${escapeHtml(profile.first_name)}.</h1>
-      <p class="lead">I’m keeping your LinkedIn pipeline moving. Add something from your week or give me a topic and I’ll turn it into a review-ready post.</p>
+      <p class="lead">Chat with Mira like a content partner. Share a moment, ask for an angle, or say “Draft a post about…” and I’ll create a review-ready LinkedIn draft.</p>
       ${testerGuide()}
       <div class="grid">
         <div class="card"><div class="card-head"><h3>This week</h3><span class="badge ${published >= goal ? "published" : "pending"}">${published}/${goal} posts</span></div><div class="metric">${Math.min(Math.round((published / goal) * 100), 100)}%</div><div class="progress"><span style="width:${Math.min((published / goal) * 100, 100)}%"></span></div><div class="muted small">Based on your ${escapeHtml(profile.posting_frequency.replaceAll("_", " "))} goal.</div></div>
         <div class="card"><div class="card-head"><h3>Content Bank</h3><span class="badge published">${ui.state.content_bank.length} entries</span></div><p class="muted">Your latest real-world context makes every draft more personal.</p><button class="button secondary" data-tab="bank">Add today’s insight</button></div>
       </div>
       <div class="chat-stream" style="margin-top:18px">
-        <div class="bubble mira"><strong>Mira</strong><br>${activeDraft ? "You have a draft waiting for review. I kept the angle focused on your founder audience." : "Your pipeline is clear. What should we turn into your next post?"}</div>
-        ${activeDraft ? draftCard(activeDraft) : ""}
+        ${messages.map(messageBubble).join("")}
+        ${ui.loading ? '<div class="bubble mira typing"><strong>Mira</strong><br>Thinking through the angle…</div>' : ""}
+        ${activeDrafts.map(draftCard).join("")}
       </div>
       <div class="composer">
-        <form class="composer-box" id="draft-form">
-          <input class="input" id="draft-topic" placeholder="Draft a post about…" required minlength="3" />
-          <button class="button" ${ui.loading ? "disabled" : ""}>${ui.loading ? "Working…" : "Draft"}</button>
+        <form class="composer-box" id="chat-form">
+          <input class="input" id="chat-message" placeholder="Message Mira… try: Draft a post about human connection versus AI in mental health" required minlength="2" />
+          <button class="button" ${ui.loading ? "disabled" : ""}>${ui.loading ? "Working…" : "Send"}</button>
         </form>
       </div>
     </section>`;
 }
 
+function messageBubble(message) {
+  const role = message.role === "user" ? "user" : "mira";
+  const label = role === "user" ? "You" : "Mira";
+  return `<div class="bubble ${role}"><strong>${label}</strong><br>${escapeHtml(message.content || "")}</div>`;
+}
+
 function draftCard(post) {
   const provider = post.generation_provider || "template";
+  const publishLabel = ui.integrations?.linkedin?.connected ? "Publish to LinkedIn" : "Copy & open LinkedIn";
   return `<article class="draft-card" data-post="${post.id}">
     <div class="draft-meta"><span>Draft v${post.version} · ${post.source.replace("_", " ")} · ${escapeHtml(provider)}</span><span>${post.char_count} / 3,000</span></div>
     <div class="draft-content">${escapeHtml(post.content)}</div>
     <div class="draft-actions">
       <button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>
-      <button class="button secondary" data-draft-action="linkedin" data-id="${post.id}">Copy & open LinkedIn</button>
+      <button class="button secondary" data-draft-action="linkedin" data-id="${post.id}">${publishLabel}</button>
       <button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button>
       <button class="button ghost" data-draft-action="save" data-id="${post.id}">Save draft</button>
       <button class="button danger" data-draft-action="delete" data-id="${post.id}">Delete</button>
@@ -150,7 +172,7 @@ function testerGuide() {
       <button class="button secondary" data-action="sample-draft" ${hasMemory ? "" : "disabled"}>Generate sample draft</button>
       <button class="button ghost" data-tab="bank">Open Content Bank</button>
     </div>
-    <p class="muted small">Current MVP note: Claude and full LinkedIn OAuth are integration-ready but stay in fallback mode until staging is protected with access control and environment secrets.</p>
+    <p class="muted small">Mira now works as a chat flow. Claude is used when the server key is configured; otherwise the demo uses a safer local fallback. LinkedIn supports OAuth publishing when connected and a manual copy/open fallback when not.</p>
   </div>`;
 }
 
@@ -207,6 +229,8 @@ function renderSettings() {
   const anthropic = ui.integrations?.anthropic;
   const linkedin = ui.integrations?.linkedin;
   const payloadcms = ui.integrations?.payloadcms;
+  const linkedinBadge = linkedin?.connected ? "Connected" : linkedin?.configured ? "OAuth configured" : "Fallback ready";
+  const linkedinClass = linkedin?.connected ? "published" : linkedin?.configured ? "scheduled" : "draft";
   return `<section class="page"><div class="eyebrow">Personalization</div><h1>Settings</h1><p class="lead">These details are loaded fresh whenever Mira creates a draft.</p>
     ${ui.notice ? `<div class="notice">${escapeHtml(ui.notice)}</div>` : ""}
     <form class="card form-grid" id="profile-form">
@@ -221,8 +245,8 @@ function renderSettings() {
       ${field("Tone", "tone", p.tone)}
       <div class="field full"><button class="button">Save profile</button> <button type="button" class="button secondary" id="seed-demo">Load tester scenario</button> <button type="button" class="button ghost" id="reset-demo">Reset demo data</button></div>
     </form>
-    <div class="card" style="margin-top:16px"><div class="card-head"><h3>AI generation</h3><span class="badge ${anthropic?.configured ? "published" : "draft"}">${anthropic?.configured ? "Claude ready" : "Template fallback"}</span></div><p class="muted">${anthropic?.configured ? `Mira drafts use ${escapeHtml(anthropic.model)} with profile, writing samples, and Content Bank context.` : "Add ANTHROPIC_API_KEY in Render to enable real Claude drafts."}</p></div>
-    <div class="card" style="margin-top:16px"><div class="card-head"><h3>LinkedIn</h3><span class="badge ${linkedin?.configured ? "published" : "draft"}">${linkedin?.configured ? "OAuth configured" : "Fallback ready"}</span></div><p class="muted">${linkedin?.configured ? "OAuth URL generation is available. Token storage comes after production auth." : "Use Copy & open LinkedIn on any draft. For full OAuth on staging, add the Render URL to LinkedIn redirect URLs or route app.blidx.com to this service."}</p></div>
+    <div class="card" style="margin-top:16px"><div class="card-head"><h3>AI generation</h3><span class="badge ${anthropic?.configured ? "published" : "draft"}">${anthropic?.configured ? "Claude ready" : "Local fallback"}</span></div><p class="muted">${anthropic?.configured ? `Mira drafts use ${escapeHtml(anthropic.model)} with profile, writing samples, and Content Bank context.` : "Add ANTHROPIC_API_KEY in Render to enable live Claude generation. The local fallback remains testable and avoids the old repeated template."}</p></div>
+    <div class="card" style="margin-top:16px"><div class="card-head"><h3>LinkedIn</h3><span class="badge ${linkedinClass}">${linkedinBadge}</span></div><p class="muted">${linkedin?.connected ? "LinkedIn is connected for this staging session. Draft cards can publish directly." : linkedin?.configured ? "OAuth URL generation is available. The redirect URL must exactly match the LinkedIn app settings; otherwise use the manual fallback." : "Use Copy & open LinkedIn on any draft. For full OAuth on staging, add the Render URL to LinkedIn redirect URLs or route app.blidx.com to this service."}</p>${linkedin?.connected ? "" : '<button class="button secondary" id="connect-linkedin">Connect LinkedIn</button>'}</div>
     <div class="card" style="margin-top:16px"><div class="card-head"><h3>PayloadCMS review</h3><span class="badge draft">${escapeHtml(payloadcms?.recommendation || "defer")}</span></div><p class="muted">${escapeHtml(payloadcms?.reason || "PayloadCMS review pending.")}</p></div>
   </section>`;
 }
@@ -233,11 +257,12 @@ function field(label, name, value, full = false) {
 
 function bindView() {
   bindGlobal();
-  document.querySelector("#draft-form")?.addEventListener("submit", createDraft);
+  document.querySelector("#chat-form")?.addEventListener("submit", sendChatMessage);
   document.querySelector("#bank-form")?.addEventListener("submit", addMemory);
   document.querySelector("#profile-form")?.addEventListener("submit", saveProfile);
   document.querySelector("#reset-demo")?.addEventListener("click", resetDemo);
   document.querySelector("#seed-demo")?.addEventListener("click", seedDemo);
+  document.querySelector("#connect-linkedin")?.addEventListener("click", connectLinkedIn);
   document.querySelectorAll("[data-category]").forEach((button) => {
     button.onclick = () => { ui.selectedCategory = button.dataset.category; render(); };
   });
@@ -256,12 +281,15 @@ async function refresh() {
   render();
 }
 
-async function createDraft(event) {
+async function sendChatMessage(event) {
   event.preventDefault();
-  const topic = document.querySelector("#draft-topic").value;
+  const input = document.querySelector("#chat-message");
+  const message = input.value.trim();
+  if (!message) return;
   ui.loading = true; render();
   try {
-    await api("/api/drafts", { method: "POST", body: JSON.stringify({ topic }) });
+    const result = await api("/api/chat/message", { method: "POST", body: JSON.stringify({ message }) });
+    ui.state = result.state;
     ui.loading = false;
     await refresh();
   } catch (error) {
@@ -275,7 +303,10 @@ async function createSampleDraft() {
   ui.loading = true; render();
   try {
     const topic = ui.state.test_scenario?.next_prompt || "human connection versus AI in mental health";
-    await api("/api/drafts", { method: "POST", body: JSON.stringify({ topic, source: "tester_scenario" }) });
+    await api("/api/chat/message", {
+      method: "POST",
+      body: JSON.stringify({ message: `Draft a post about ${topic}` }),
+    });
     ui.loading = false;
     await refresh();
     showToast("Sample draft generated");
@@ -338,15 +369,48 @@ async function approveDraft(id, schedule_type) {
 async function copyAndOpenLinkedIn(id) {
   const post = ui.state.posts.find((item) => item.id === id);
   if (!post) return;
+  const publishResult = await api(`/api/drafts/${id}/publish`, { method: "POST" });
+  if (publishResult.published) {
+    await refresh();
+    showToast("Published to LinkedIn");
+    return;
+  }
   try {
     await navigator.clipboard.writeText(post.content);
     showToast("Draft copied. Opening LinkedIn…");
   } catch (error) {
     showToast("Opening LinkedIn. Copy the draft manually if clipboard is blocked.");
   }
-  window.open(ui.integrations?.linkedin?.fallback_url || "https://www.linkedin.com/feed/", "_blank", "noopener,noreferrer");
-  await api(`/api/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ schedule_type: "now" }) });
+  window.open(publishResult.fallback_url || ui.integrations?.linkedin?.fallback_url || "https://www.linkedin.com/feed/", "_blank", "noopener,noreferrer");
+  showLinkedInTrackingModal(id);
+}
+
+function showLinkedInTrackingModal(id) {
+  ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>Did you post it on LinkedIn?</h3><p class="muted">After you paste and publish the draft on LinkedIn, add the post URL here so Blidx can mark it as published. You can also mark it posted without a URL for testing.</p><input class="input" id="linkedin-url" placeholder="https://www.linkedin.com/feed/update/..." /><div class="modal-actions"><button class="button ghost" id="cancel-modal">Not yet</button><button class="button" id="save-linkedin-url">Mark posted</button></div></div></div>`;
+  render();
+  document.querySelector("#cancel-modal").onclick = () => { ui.modal = null; render(); };
+  document.querySelector("#save-linkedin-url").onclick = () => trackLinkedInUrl(id);
+}
+
+async function trackLinkedInUrl(id) {
+  const url = document.querySelector("#linkedin-url")?.value || "";
+  await api(`/api/drafts/${id}/track-linkedin-url`, { method: "POST", body: JSON.stringify({ url }) });
+  ui.modal = null;
   await refresh();
+  showToast("Marked as posted");
+}
+
+async function connectLinkedIn() {
+  try {
+    const result = await api("/api/integrations/linkedin/connect");
+    if (result.authorization_url) {
+      window.location.href = result.authorization_url;
+      return;
+    }
+    showToast(result.message || "LinkedIn OAuth is not configured yet");
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 async function resetDemo() {
