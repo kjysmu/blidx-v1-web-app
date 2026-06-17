@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
-from app.api import auth, chat, demo, generate, memory, posts, profile
+from app.api import admin, auth, chat, demo, generate, integrations, memory, posts, profile
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
@@ -32,4 +32,6 @@ app.include_router(memory.router, prefix="/memory", tags=["Memory"])
 app.include_router(generate.router, prefix="/generate", tags=["Generate"])
 app.include_router(posts.router, prefix="/posts", tags=["Posts"])
 app.include_router(demo.router, prefix="/api", tags=["Web App"])
+app.include_router(integrations.router, prefix="/api/integrations", tags=["Integrations"])
+app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 app.mount("/assets", StaticFiles(directory=WEB_DIR / "assets"), name="assets")

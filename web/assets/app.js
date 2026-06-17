@@ -3,6 +3,7 @@ const app = document.querySelector("#app");
 const ui = {
   tab: "chat",
   state: null,
+  integrations: null,
   selectedCategory: "insights",
   notice: "",
   modal: null,
@@ -47,7 +48,7 @@ function layout(content) {
       <aside class="sidebar">
         <div class="brand"><span class="brand-mark">B</span> Blidx</div>
         <nav class="nav">${nav}</nav>
-        <div class="side-note"><strong>Local MVP mode</strong>Data persists on this computer. LinkedIn publishing and paid AI are simulated.</div>
+        <div class="side-note"><strong>Staging MVP</strong>${integrationSummary()}</div>
       </aside>
       <main class="main">
         <header class="topbar">
@@ -108,11 +109,13 @@ function renderChat() {
 }
 
 function draftCard(post) {
+  const provider = post.generation_provider || "template";
   return `<article class="draft-card" data-post="${post.id}">
-    <div class="draft-meta"><span>Draft v${post.version} · ${post.source.replace("_", " ")}</span><span>${post.char_count} / 3,000</span></div>
+    <div class="draft-meta"><span>Draft v${post.version} · ${post.source.replace("_", " ")} · ${escapeHtml(provider)}</span><span>${post.char_count} / 3,000</span></div>
     <div class="draft-content">${escapeHtml(post.content)}</div>
     <div class="draft-actions">
       <button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>
+      <button class="button secondary" data-draft-action="linkedin" data-id="${post.id}">Copy & open LinkedIn</button>
       <button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button>
       <button class="button ghost" data-draft-action="save" data-id="${post.id}">Save draft</button>
       <button class="button danger" data-draft-action="delete" data-id="${post.id}">Delete</button>
@@ -170,6 +173,9 @@ function renderCalendar() {
 
 function renderSettings() {
   const p = ui.state.profile;
+  const anthropic = ui.integrations?.anthropic;
+  const linkedin = ui.integrations?.linkedin;
+  const payloadcms = ui.integrations?.payloadcms;
   return `<section class="page"><div class="eyebrow">Personalization</div><h1>Settings</h1><p class="lead">These details are loaded fresh whenever Mira creates a draft.</p>
     ${ui.notice ? `<div class="notice">${escapeHtml(ui.notice)}</div>` : ""}
     <form class="card form-grid" id="profile-form">
@@ -184,7 +190,9 @@ function renderSettings() {
       ${field("Tone", "tone", p.tone)}
       <div class="field full"><button class="button">Save profile</button> <button type="button" class="button ghost" id="reset-demo">Reset demo data</button></div>
     </form>
-    <div class="card" style="margin-top:16px"><div class="card-head"><h3>LinkedIn</h3><span class="badge draft">Not connected</span></div><p class="muted">OAuth and automatic publishing are intentionally disabled in local MVP mode. Approved “Post now” items are marked published locally.</p></div>
+    <div class="card" style="margin-top:16px"><div class="card-head"><h3>AI generation</h3><span class="badge ${anthropic?.configured ? "published" : "draft"}">${anthropic?.configured ? "Claude ready" : "Template fallback"}</span></div><p class="muted">${anthropic?.configured ? `Mira drafts use ${escapeHtml(anthropic.model)} with profile, writing samples, and Content Bank context.` : "Add ANTHROPIC_API_KEY in Render to enable real Claude drafts."}</p></div>
+    <div class="card" style="margin-top:16px"><div class="card-head"><h3>LinkedIn</h3><span class="badge ${linkedin?.configured ? "published" : "draft"}">${linkedin?.configured ? "OAuth configured" : "Fallback ready"}</span></div><p class="muted">${linkedin?.configured ? "OAuth URL generation is available. Token storage comes after production auth." : "Use Copy & open LinkedIn on any draft. For full OAuth on staging, add the Render URL to LinkedIn redirect URLs or route app.blidx.com to this service."}</p></div>
+    <div class="card" style="margin-top:16px"><div class="card-head"><h3>PayloadCMS review</h3><span class="badge draft">${escapeHtml(payloadcms?.recommendation || "defer")}</span></div><p class="muted">${escapeHtml(payloadcms?.reason || "PayloadCMS review pending.")}</p></div>
   </section>`;
 }
 
@@ -207,7 +215,12 @@ function bindView() {
 }
 
 async function refresh() {
-  ui.state = await api("/api/state");
+  const [state, integrations] = await Promise.all([
+    api("/api/state"),
+    api("/api/integrations/status").catch(() => null),
+  ]);
+  ui.state = state;
+  ui.integrations = integrations;
   render();
 }
 
@@ -247,9 +260,11 @@ async function saveProfile(event) {
 
 function handleDraftAction(action, id) {
   if (action === "approve") {
-    ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>When should Mira publish?</h3><p class="muted">LinkedIn is simulated locally. The status and calendar behavior are real.</p><div class="modal-actions"><button class="button ghost" data-schedule="now">Post now</button><button class="button" data-schedule="best_time">Best time</button></div></div></div>`;
+    ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>When should Mira publish?</h3><p class="muted">Use “Copy & open LinkedIn” for the real tester workflow today. Scheduling still keeps Library and Calendar state organized.</p><div class="modal-actions"><button class="button ghost" data-schedule="now">Mark posted</button><button class="button" data-schedule="best_time">Best time</button></div></div></div>`;
     render();
     document.querySelectorAll("[data-schedule]").forEach((button) => button.onclick = () => approveDraft(id, button.dataset.schedule));
+  } else if (action === "linkedin") {
+    copyAndOpenLinkedIn(id);
   } else if (action === "edit") {
     ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>Tell Mira what to change</h3><textarea id="edit-instructions" placeholder="Try: Make it shorter, bolder, or more personal."></textarea><div class="modal-actions"><button class="button ghost" id="cancel-modal">Cancel</button><button class="button" id="submit-edit">Revise draft</button></div></div></div>`;
     render();
@@ -273,6 +288,20 @@ async function approveDraft(id, schedule_type) {
   showToast(schedule_type === "now" ? "Published locally" : "Scheduled for Mira’s recommended time");
 }
 
+async function copyAndOpenLinkedIn(id) {
+  const post = ui.state.posts.find((item) => item.id === id);
+  if (!post) return;
+  try {
+    await navigator.clipboard.writeText(post.content);
+    showToast("Draft copied. Opening LinkedIn…");
+  } catch (error) {
+    showToast("Opening LinkedIn. Copy the draft manually if clipboard is blocked.");
+  }
+  window.open(ui.integrations?.linkedin?.fallback_url || "https://www.linkedin.com/feed/", "_blank", "noopener,noreferrer");
+  await api(`/api/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ schedule_type: "now" }) });
+  await refresh();
+}
+
 async function resetDemo() {
   await api("/api/reset", { method: "POST" });
   ui.notice = ""; ui.tab = "chat"; await refresh(); showToast("Demo data reset");
@@ -284,3 +313,10 @@ function showToast(message) {
 }
 
 refresh().catch((error) => layout(`<div class="page"><div class="notice">Could not load the app: ${escapeHtml(error.message)}</div></div>`));
+
+function integrationSummary() {
+  if (!ui.integrations) return "Loading integration status…";
+  const ai = ui.integrations.anthropic?.configured ? "Claude enabled" : "Claude fallback";
+  const linkedin = ui.integrations.linkedin?.configured ? "LinkedIn OAuth ready" : "LinkedIn copy fallback";
+  return `${ai}. ${linkedin}.`;
+}

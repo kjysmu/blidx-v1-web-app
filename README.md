@@ -85,8 +85,40 @@ POST /posts/{post_id}/skip
 ```
 
 The original route handlers remain placeholders. The web app uses the `/api`
-local MVP endpoints and a JSON demo store so the product flow can be tested
-without PostgreSQL, LinkedIn, Stripe, or paid LLM credentials.
+MVP endpoints and a JSON demo store so the product flow can be tested while the
+production database/auth layers are still being connected.
+
+## Current integration status
+
+- Claude / Anthropic: supported through `ANTHROPIC_API_KEY`. When the key is
+  missing or the API call fails, Mira falls back to the deterministic demo
+  generator so the app stays usable.
+- LinkedIn: OAuth URL generation and token exchange helpers are implemented.
+  The tester-safe fallback is also available in the UI: copy the draft and open
+  LinkedIn for manual posting.
+- Admin: `/admin` is available behind HTTP Basic auth. Set `ADMIN_USERNAME` and
+  `ADMIN_PASSWORD` in the environment before enabling it on staging.
+- PayloadCMS: reviewed for V1. It is a strong Next.js-native CMS/admin option,
+  but it adds a second backend stack while the MVP is still FastAPI-first. The
+  current recommendation is to defer PayloadCMS and use the lightweight `/admin`
+  route until the product needs a marketer-managed CMS or a full Next.js app.
+
+### Required secrets
+
+Never commit `.env` or real keys. Configure these in Render's Environment tab:
+
+```txt
+ANTHROPIC_API_KEY
+LINKEDIN_CLIENT_ID
+LINKEDIN_CLIENT_SECRET
+LINKEDIN_REDIRECT_URI
+ADMIN_USERNAME
+ADMIN_PASSWORD
+```
+
+The current LinkedIn app redirect URLs provided by Malia are for
+`localhost:3000` and `app.blidx.com`. The Render staging URL will not complete
+OAuth until it is added to LinkedIn or routed behind `app.blidx.com`.
 
 ## Deploy to Render
 

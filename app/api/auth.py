@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.schemas.auth import RegisterRequest, LoginRequest, AuthResponse
+from app.integrations.linkedin import LinkedInClient
 
 router = APIRouter()
 
@@ -28,4 +29,19 @@ def login(payload: LoginRequest):
         "access_token": "placeholder_token",
         "token_type": "bearer",
         "user_id": "placeholder_user_id",
+    }
+
+
+@router.get("/linkedin/callback")
+def linkedin_callback(code: str | None = None, error: str | None = None):
+    if error:
+        return {"connected": False, "error": error}
+    if not code:
+        return {"connected": False, "error": "Missing LinkedIn authorization code"}
+
+    token = LinkedInClient().exchange_code_for_token(code)
+    return {
+        "connected": True,
+        "expires_in": token.get("expires_in"),
+        "note": "LinkedIn token exchange succeeded. Persistent token storage comes with production auth.",
     }

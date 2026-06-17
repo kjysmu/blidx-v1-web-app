@@ -5,6 +5,10 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import httpx
+
+from app.integrations.llm import ClaudeProvider
+
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -202,10 +206,54 @@ class DemoStore:
         profile = state["profile"]
         memory = state["content_bank"][0] if state["content_bank"] else None
         first_name = profile.get("first_name") or "there"
+        hook = topic.strip().rstrip(".")
+        content, provider, error = DemoStore._generate_ai_draft(state, topic)
+        if not content:
+            content = DemoStore._fallback_draft_text(state, topic)
+            provider = "template"
+
+        sources = []
+        if memory:
+            sources.append(
+                {
+                    "type": "personal",
+                    "title": f"Content Bank · {memory['category'].title()}",
+                }
+            )
+        if provider != "template":
+            sources.append({"type": "ai", "title": f"Generated with {provider}"})
+
+        now = utc_now()
+        return {
+            "id": str(uuid.uuid4()),
+            "title": hook[:70].capitalize(),
+            "content": content[:3000],
+            "status": "pending",
+            "source": source,
+            "sources": sources,
+            "char_count": len(content[:3000]),
+            "version": 1,
+            "scheduled_at": None,
+            "published_at": None,
+            "published_url": None,
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "generation_provider": provider,
+            "generation_error": error,
+            "message": (
+                f"{first_name}, I used Claude with your profile and Content Bank context."
+                if provider != "template"
+                else f"{first_name}, I used your profile and freshest context for this angle."
+            ),
+        }
+
+    @staticmethod
+    def _fallback_draft_text(state: dict, topic: str) -> str:
+        profile = state["profile"]
+        memory = state["content_bank"][0] if state["content_bank"] else None
         company = profile.get("company_name") or "my company"
         audience = ", ".join(profile.get("audience") or ["founders"])
         memory_text = memory["raw_text"] if memory else ""
-
         hook = topic.strip().rstrip(".")
         personal_block = (
             f"\n\nA recent moment made this concrete for me: {memory_text}"
@@ -215,43 +263,76 @@ class DemoStore:
                 "consistency comes from owning the workflow, not waiting for inspiration."
             )
         )
-        content = (
+        return (
             f"{hook.capitalize()} is not mainly a content problem.\n\n"
             f"It is a workflow problem.\n\n"
             f"At {company}, I keep returning to a simple principle: the system should "
             f"carry the work forward, while the founder provides judgment and context."
             f"{personal_block}\n\n"
-            f"For {audience}, the useful question is not “Can AI write this?” "
-            f"It is “Can the system reliably turn real work into a clear point of view?”\n\n"
+            f"For {audience}, the useful question is not \"Can AI write this?\" "
+            f"It is \"Can the system reliably turn real work into a clear point of view?\"\n\n"
             f"That is the standard I think founder-led content should meet.\n\n"
             f"What part of your content workflow creates the most friction today?"
         )
-        now = utc_now()
-        return {
-            "id": str(uuid.uuid4()),
-            "title": hook[:70].capitalize(),
-            "content": content[:3000],
-            "status": "pending",
-            "source": source,
-            "sources": (
-                [
-                    {
-                        "type": "personal",
-                        "title": f"Content Bank · {memory['category'].title()}",
-                    }
-                ]
-                if memory
-                else []
-            ),
-            "char_count": len(content[:3000]),
-            "version": 1,
-            "scheduled_at": None,
-            "published_at": None,
-            "published_url": None,
-            "created_at": now.isoformat(),
-            "updated_at": now.isoformat(),
-            "message": f"{first_name}, I used your profile and freshest context for this angle.",
-        }
+
+    @staticmethod
+    def _generate_ai_draft(state: dict, topic: str) -> tuple[str | None, str, str | None]:
+        provider = ClaudeProvider()
+        if not provider.configured:
+            return None, "template", None
+
+        system_prompt = (
+            "You are Mira, the content operating partner inside Blidx. "
+            "Write only the LinkedIn post draft, with no preamble. "
+            "The draft must sound like the user, not like a generic AI assistant. "
+            "Use first person when appropriate. Keep it publishable, specific, and under 2,600 characters. "
+            "Blend data, emotional truth, and practical insight. Use rhetorical questions when natural. "
+            "If listing multiple points, use the user's preferred numbered style like 1/, 2/, 3/. "
+            "End with a thoughtful invitation to reflect, connect, or respond. "
+            "Do not invent concrete facts, names, statistics, events, or credentials that are not in the context."
+        )
+        try:
+            return (
+                provider.generate(DemoStore._context_package(state, topic), system_prompt),
+                f"Anthropic {provider.model}",
+                None,
+            )
+        except (httpx.HTTPError, RuntimeError, ValueError) as exc:
+            return None, "template", str(exc)[:300]
+
+    @staticmethod
+    def _context_package(state: dict, topic: str) -> str:
+        profile = state["profile"]
+        memories = state["content_bank"][:8]
+        writing_samples = profile.get("writing_samples") or []
+
+        return "\n\n".join(
+            [
+                "TASK\n" f"Draft a LinkedIn post about: {topic.strip()}",
+                "USER PROFILE\n" + json.dumps(profile, indent=2),
+                "LINKEDIN ABOUT / WRITING STYLE\n"
+                + (profile.get("writing_style") or "No writing style provided yet."),
+                "VOICE BENCHMARK\n"
+                + (
+                    "\n\n---\n\n".join(writing_samples)
+                    if writing_samples
+                    else "No writing samples provided yet."
+                ),
+                "CONTENT BANK CONTEXT\n"
+                + (
+                    json.dumps(memories, indent=2)
+                    if memories
+                    else "No Content Bank entries yet. Ask a reflective question rather than inventing personal context."
+                ),
+                "QUALITY BAR\n"
+                "1. Data plus emotion: connect facts to lived experience.\n"
+                "2. Rhetorical questions: pull readers into reflection.\n"
+                "3. Numbered structure when useful: 1/, 2/, 3/.\n"
+                "4. Vulnerability with strength: honest, resilient, never performative.\n"
+                "5. Call to connection: invite readers into the conversation.\n"
+                "6. Measured but passionate: conviction with humility.",
+            ]
+        )
 
 
 demo_store = DemoStore()
