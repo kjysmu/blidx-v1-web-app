@@ -59,3 +59,26 @@ def test_complete_local_web_app_flow():
     assert state["posts"][0]["status"] == "scheduled"
 
     client.post("/api/reset")
+
+
+def test_seed_test_scenario_makes_app_immediately_testable():
+    response = client.post("/api/seed-test-scenario")
+
+    assert response.status_code == 200
+    state = response.json()
+    assert state["test_scenario"]["loaded"] is True
+    assert state["profile"]["first_name"] == "Malia"
+    assert state["profile"]["company_name"] == "HeyJuni"
+    assert len(state["content_bank"]) == 3
+    assert state["posts"] == []
+
+    draft_response = client.post(
+        "/api/drafts",
+        json={"topic": state["test_scenario"]["next_prompt"], "source": "tester_scenario"},
+    )
+    assert draft_response.status_code == 200
+    draft = draft_response.json()
+    assert draft["status"] == "pending"
+    assert draft["generation_provider"] in {"template", "Anthropic claude-sonnet-4-6"}
+
+    client.post("/api/reset")

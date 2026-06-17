@@ -165,6 +165,12 @@ class DemoStore:
             self._write(state)
             return deepcopy(state)
 
+    def seed_test_scenario(self) -> dict:
+        with self.lock:
+            state = self._malia_test_state()
+            self._write(state)
+            return deepcopy(state)
+
     def _set_status(self, post_id: str, status: str) -> dict | None:
         with self.lock:
             state = self._read()
@@ -175,6 +181,80 @@ class DemoStore:
             post["updated_at"] = utc_now().isoformat()
             self._write(state)
             return deepcopy(post)
+
+    def _malia_test_state(self) -> dict:
+        state = self._initial_state()
+        state["user"] = {
+            "id": str(uuid.uuid4()),
+            "email": "malia@blidx.demo",
+            "user_name": "Malia",
+        }
+        state["profile"] = {
+            "first_name": "Malia",
+            "role": "Founder",
+            "company_name": "HeyJuni",
+            "company_website": "https://www.heyjuni.com",
+            "industry": "Healthcare - Mental Health",
+            "company_description": (
+                "HeyJuni is a mental health platform combining community, "
+                "workshops, and therapy around real human connection."
+            ),
+            "expertise": ["Startup", "Mental Health", "Medicine"],
+            "writing_style": (
+                "Data-driven yet personal. Uses reflective questions, measured "
+                "conviction, numbered structures like 1/, 2/, 3/, and ends with "
+                "an invitation to connect or reflect."
+            ),
+            "writing_samples": [
+                (
+                    "What if healing did not have to start in a clinic? "
+                    "For many people, the first step is not treatment. It is feeling "
+                    "seen, safe, and connected."
+                ),
+                (
+                    "Coexistence with AI is the strategy, but we cannot ignore what "
+                    "changes when technology starts reshaping how people work, learn, "
+                    "and care for one another."
+                ),
+            ],
+            "audience": ["Industry Peers", "Founders", "Investors / VCs"],
+            "content_types": ["Industry insights", "Personal stories", "Case studies"],
+            "posting_frequency": "3-4x_per_week",
+            "tone": "Insightful & measured",
+            "timezone": "Asia/Singapore",
+        }
+        for raw_text, category in [
+            (
+                "I attended an event about the evolution of AI. Many founders were curious, but I could also sense anxiety about what AI will replace.",
+                "events",
+            ),
+            (
+                "I keep thinking about the value of human connection in mental health care as more AI products launch.",
+                "insights",
+            ),
+            (
+                "I rebuilt the new HeyJuni website mostly by myself with AI support. It felt empowering and scary at the same time.",
+                "milestones",
+            ),
+        ]:
+            state["content_bank"].insert(
+                0,
+                {
+                    "id": str(uuid.uuid4()),
+                    "raw_text": raw_text,
+                    "category": category,
+                    "tags": [category.title()],
+                    "freshness": "fresh",
+                    "content_potential": self._potential(raw_text),
+                    "created_at": utc_now().isoformat(),
+                },
+            )
+        state["test_scenario"] = {
+            "loaded": True,
+            "name": "Malia founder-test scenario",
+            "next_prompt": "human connection versus AI in mental health",
+        }
+        return state
 
     @staticmethod
     def _find_post(state: dict, post_id: str) -> dict | None:

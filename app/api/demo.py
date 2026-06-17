@@ -101,3 +101,8 @@ def delete_draft(draft_id: str) -> dict[str, Any]:
 @router.post("/reset")
 def reset_demo() -> dict[str, Any]:
     return demo_store.reset()
+
+
+@router.post("/seed-test-scenario")
+def seed_test_scenario() -> dict[str, Any]:
+    return demo_store.seed_test_scenario()

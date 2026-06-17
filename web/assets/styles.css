@@ -106,6 +106,13 @@ h1 { margin-top: 7px; font-family: "Playfair Display"; font-size: clamp(30px, 5v
   background: var(--card); border: 1px solid var(--line); border-radius: 18px;
   padding: 20px; box-shadow: 0 4px 20px rgba(30,25,50,.035);
 }
+.tester-card { margin-bottom: 18px; border-color: #cfc8f0; background: linear-gradient(135deg, #fff, #faf9ff); }
+.checklist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin: 12px 0 15px; }
+.check { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: white; color: var(--muted); font-size: 13px; }
+.check span { display: inline-block; width: 20px; color: var(--purple); font-weight: 800; }
+.check.done { color: var(--green); background: var(--green-soft); border-color: #b9dfca; }
+.check.done span { color: var(--green); }
+.tester-actions { display: flex; gap: 9px; flex-wrap: wrap; margin-bottom: 10px; }
 .card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
 .card h3 { font-size: 16px; }
 .metric { font-size: 34px; font-family: "Playfair Display"; font-weight: 700; }
@@ -193,6 +200,7 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .topbar { height: 66px; padding: 0 18px; }
   .page { padding: 24px 18px; }
   .grid, .form-grid { grid-template-columns: 1fr; }
+  .checklist { grid-template-columns: 1fr; }
   .field.full { grid-column: auto; }
   .template-grid { grid-template-columns: repeat(2, 1fr); }
   .composer { left: 0; margin: 0; width: 100%; padding: 14px 14px 82px; }

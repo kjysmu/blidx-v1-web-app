@@ -53,7 +53,7 @@ function layout(content) {
       <main class="main">
         <header class="topbar">
           <div class="mira-id"><div class="avatar">M</div><div><div class="mira-name">Mira</div><div class="online">● Online · content lead</div></div></div>
-          <div class="top-actions"><button class="icon-button" data-action="new-draft">＋ Draft</button></div>
+          <div class="top-actions"><button class="icon-button" data-action="seed-demo">Start test</button><button class="icon-button" data-action="new-draft">＋ Draft</button></div>
         </header>
         ${content}
       </main>
@@ -71,6 +71,12 @@ function bindGlobal() {
   });
   document.querySelectorAll('[data-action="new-draft"]').forEach((button) => {
     button.onclick = () => { ui.tab = "chat"; render(); setTimeout(() => document.querySelector("#draft-topic")?.focus(), 0); };
+  });
+  document.querySelectorAll('[data-action="seed-demo"]').forEach((button) => {
+    button.onclick = seedDemo;
+  });
+  document.querySelectorAll('[data-action="sample-draft"]').forEach((button) => {
+    button.onclick = createSampleDraft;
   });
 }
 
@@ -91,6 +97,7 @@ function renderChat() {
       <div class="eyebrow">Your content workdesk</div>
       <h1>Good ${new Date().getHours() < 12 ? "morning" : "afternoon"}, ${escapeHtml(profile.first_name)}.</h1>
       <p class="lead">I’m keeping your LinkedIn pipeline moving. Add something from your week or give me a topic and I’ll turn it into a review-ready post.</p>
+      ${testerGuide()}
       <div class="grid">
         <div class="card"><div class="card-head"><h3>This week</h3><span class="badge ${published >= goal ? "published" : "pending"}">${published}/${goal} posts</span></div><div class="metric">${Math.min(Math.round((published / goal) * 100), 100)}%</div><div class="progress"><span style="width:${Math.min((published / goal) * 100, 100)}%"></span></div><div class="muted small">Based on your ${escapeHtml(profile.posting_frequency.replaceAll("_", " "))} goal.</div></div>
         <div class="card"><div class="card-head"><h3>Content Bank</h3><span class="badge published">${ui.state.content_bank.length} entries</span></div><p class="muted">Your latest real-world context makes every draft more personal.</p><button class="button secondary" data-tab="bank">Add today’s insight</button></div>
@@ -121,6 +128,30 @@ function draftCard(post) {
       <button class="button danger" data-draft-action="delete" data-id="${post.id}">Delete</button>
     </div>
   </article>`;
+}
+
+function testerGuide() {
+  const loaded = ui.state.test_scenario?.loaded;
+  const hasMemory = ui.state.content_bank.length > 0;
+  const hasDraft = ui.state.posts.some((post) => post.status === "pending");
+  const hasLibrary = ui.state.posts.some((post) => post.status !== "deleted");
+  const hasScheduled = ui.state.posts.some((post) => ["scheduled", "published"].includes(post.status));
+  const items = [
+    ["Load tester profile + Content Bank", loaded],
+    ["Generate one review-ready draft", hasDraft || hasLibrary],
+    ["Review the draft action buttons", hasLibrary],
+    ["Check Library and Calendar states", hasScheduled],
+  ];
+  return `<div class="card tester-card">
+    <div class="card-head"><div><h3>Tester path</h3><p class="muted small">Use this path first. It resets stale demo data and makes the MVP testable in a predictable order.</p></div><span class="badge ${loaded ? "published" : "draft"}">${loaded ? "ready" : "start here"}</span></div>
+    <div class="checklist">${items.map(([label, done]) => `<div class="check ${done ? "done" : ""}"><span>${done ? "✓" : "○"}</span>${label}</div>`).join("")}</div>
+    <div class="tester-actions">
+      <button class="button" data-action="seed-demo">${loaded ? "Restart test scenario" : "Start test scenario"}</button>
+      <button class="button secondary" data-action="sample-draft" ${hasMemory ? "" : "disabled"}>Generate sample draft</button>
+      <button class="button ghost" data-tab="bank">Open Content Bank</button>
+    </div>
+    <p class="muted small">Current MVP note: Claude and full LinkedIn OAuth are integration-ready but stay in fallback mode until staging is protected with access control and environment secrets.</p>
+  </div>`;
 }
 
 function renderBank() {
@@ -188,7 +219,7 @@ function renderSettings() {
       ${field("Expertise (comma separated)", "expertise", p.expertise.join(", "), true)}
       <div class="field"><label>Posting frequency</label><select name="posting_frequency"><option value="1-2x_per_week" ${p.posting_frequency === "1-2x_per_week" ? "selected" : ""}>1–2× per week</option><option value="3-4x_per_week" ${p.posting_frequency === "3-4x_per_week" ? "selected" : ""}>3–4× per week</option><option value="5+_per_week" ${p.posting_frequency === "5+_per_week" ? "selected" : ""}>5+ per week</option></select></div>
       ${field("Tone", "tone", p.tone)}
-      <div class="field full"><button class="button">Save profile</button> <button type="button" class="button ghost" id="reset-demo">Reset demo data</button></div>
+      <div class="field full"><button class="button">Save profile</button> <button type="button" class="button secondary" id="seed-demo">Load tester scenario</button> <button type="button" class="button ghost" id="reset-demo">Reset demo data</button></div>
     </form>
     <div class="card" style="margin-top:16px"><div class="card-head"><h3>AI generation</h3><span class="badge ${anthropic?.configured ? "published" : "draft"}">${anthropic?.configured ? "Claude ready" : "Template fallback"}</span></div><p class="muted">${anthropic?.configured ? `Mira drafts use ${escapeHtml(anthropic.model)} with profile, writing samples, and Content Bank context.` : "Add ANTHROPIC_API_KEY in Render to enable real Claude drafts."}</p></div>
     <div class="card" style="margin-top:16px"><div class="card-head"><h3>LinkedIn</h3><span class="badge ${linkedin?.configured ? "published" : "draft"}">${linkedin?.configured ? "OAuth configured" : "Fallback ready"}</span></div><p class="muted">${linkedin?.configured ? "OAuth URL generation is available. Token storage comes after production auth." : "Use Copy & open LinkedIn on any draft. For full OAuth on staging, add the Render URL to LinkedIn redirect URLs or route app.blidx.com to this service."}</p></div>
@@ -206,6 +237,7 @@ function bindView() {
   document.querySelector("#bank-form")?.addEventListener("submit", addMemory);
   document.querySelector("#profile-form")?.addEventListener("submit", saveProfile);
   document.querySelector("#reset-demo")?.addEventListener("click", resetDemo);
+  document.querySelector("#seed-demo")?.addEventListener("click", seedDemo);
   document.querySelectorAll("[data-category]").forEach((button) => {
     button.onclick = () => { ui.selectedCategory = button.dataset.category; render(); };
   });
@@ -232,6 +264,21 @@ async function createDraft(event) {
     await api("/api/drafts", { method: "POST", body: JSON.stringify({ topic }) });
     ui.loading = false;
     await refresh();
+  } catch (error) {
+    ui.loading = false;
+    showToast(error.message);
+  }
+}
+
+async function createSampleDraft() {
+  ui.tab = "chat";
+  ui.loading = true; render();
+  try {
+    const topic = ui.state.test_scenario?.next_prompt || "human connection versus AI in mental health";
+    await api("/api/drafts", { method: "POST", body: JSON.stringify({ topic, source: "tester_scenario" }) });
+    ui.loading = false;
+    await refresh();
+    showToast("Sample draft generated");
   } catch (error) {
     ui.loading = false;
     showToast(error.message);
@@ -305,6 +352,14 @@ async function copyAndOpenLinkedIn(id) {
 async function resetDemo() {
   await api("/api/reset", { method: "POST" });
   ui.notice = ""; ui.tab = "chat"; await refresh(); showToast("Demo data reset");
+}
+
+async function seedDemo() {
+  await api("/api/seed-test-scenario", { method: "POST" });
+  ui.notice = "";
+  ui.tab = "chat";
+  await refresh();
+  showToast("Tester scenario loaded");
 }
 
 function showToast(message) {
