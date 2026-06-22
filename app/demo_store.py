@@ -10,6 +10,25 @@ import httpx
 from app.integrations.llm import ClaudeProvider
 
 
+class CurrentUserContext:
+    def __init__(self) -> None:
+        self.local = threading.local()
+
+    def get(self) -> str | None:
+        return getattr(self.local, "user_id", None)
+
+    def set(self, user_id: str | None) -> str | None:
+        previous = self.get()
+        self.local.user_id = user_id
+        return previous
+
+    def reset(self, token: str | None) -> None:
+        self.local.user_id = token
+
+
+current_user_id = CurrentUserContext()
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -17,21 +36,25 @@ def utc_now() -> datetime:
 class DemoStore:
     def __init__(self) -> None:
         self.path = Path(__file__).resolve().parent.parent / "data" / "demo_state.json"
+        self.users_dir = self.path.parent / "users"
         self.lock = threading.Lock()
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.users_dir.mkdir(parents=True, exist_ok=True)
         if not self.path.exists():
             self._write(self._initial_state())
 
-    def _initial_state(self) -> dict:
+    def _initial_state(self, user: dict | None = None) -> dict:
         now = utc_now().isoformat()
+        user_block = user or {
+            "id": str(uuid.uuid4()),
+            "email": "jae@blidx.local",
+            "user_name": "Jae",
+        }
+        first_name = (user_block.get("user_name") or "Jae").split()[0]
         return {
-            "user": {
-                "id": str(uuid.uuid4()),
-                "email": "jae@blidx.local",
-                "user_name": "Jae",
-            },
+            "user": user_block,
             "profile": {
-                "first_name": "Jae",
+                "first_name": first_name,
                 "role": "Founder / CEO",
                 "company_name": "Blidx",
                 "company_website": "https://blidx.com",
@@ -68,11 +91,46 @@ class DemoStore:
             },
         }
 
+    def _state_path(self) -> Path:
+        user_id = current_user_id.get()
+        if not user_id:
+            return self.path
+        return self.users_dir / f"{user_id}.json"
+
     def _read(self) -> dict:
-        return self._normalize_state(json.loads(self.path.read_text()))
+        path = self._state_path()
+        if not path.exists():
+            self._write(self._initial_state({"id": current_user_id.get(), "email": "", "user_name": "User"}))
+        return self._normalize_state(json.loads(path.read_text()))
 
     def _write(self, state: dict) -> None:
-        self.path.write_text(json.dumps(state, indent=2))
+        self._state_path().write_text(json.dumps(state, indent=2))
+
+    def ensure_user_state(self, user: dict) -> dict:
+        with self.lock:
+            token = current_user_id.set(user["id"])
+            try:
+                path = self._state_path()
+                if path.exists():
+                    state = self._read()
+                    state["user"] = {
+                        "id": user["id"],
+                        "email": user["email"],
+                        "user_name": user.get("user_name") or user["email"].split("@")[0],
+                    }
+                    self._write(state)
+                else:
+                    state = self._initial_state(
+                        {
+                            "id": user["id"],
+                            "email": user["email"],
+                            "user_name": user.get("user_name") or user["email"].split("@")[0],
+                        }
+                    )
+                    self._write(state)
+                return self._public_state(state)
+            finally:
+                current_user_id.reset(token)
 
     def snapshot(self) -> dict:
         with self.lock:
@@ -476,6 +534,10 @@ class DemoStore:
         linkedin["connected"] = bool(state.get("linkedin", {}).get("access_token")) or bool(
             linkedin.get("connected")
         )
+        public["auth"] = {
+            "authenticated": bool(current_user_id.get()),
+            "user_id": current_user_id.get(),
+        }
         return public
 
     @staticmethod

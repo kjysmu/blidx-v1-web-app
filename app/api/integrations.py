@@ -1,13 +1,14 @@
 import secrets
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.api.deps import use_request_user
 from app.core.config import settings
 from app.demo_store import demo_store
 from app.integrations.linkedin import LinkedInClient, linkedin_share_url
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(use_request_user)])
 
 
 class LinkedInConnectResponse(BaseModel):

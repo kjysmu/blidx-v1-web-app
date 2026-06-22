@@ -4,6 +4,9 @@ const ui = {
   tab: "chat",
   state: null,
   integrations: null,
+  auth: JSON.parse(localStorage.getItem("blidx_auth") || "null"),
+  demoMode: localStorage.getItem("blidx_demo") === "true",
+  authMode: "login",
   selectedCategory: "insights",
   notice: "",
   modal: null,
@@ -12,8 +15,9 @@ const ui = {
 };
 
 const api = async (path, options = {}) => {
+  const authHeaders = ui.auth?.access_token ? { Authorization: `Bearer ${ui.auth.access_token}` } : {};
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    headers: { "Content-Type": "application/json", ...authHeaders, ...(options.headers || {}) },
     ...options,
   });
   if (!response.ok) throw new Error((await response.json()).detail || "Request failed");
@@ -34,6 +38,12 @@ const navItems = [
 ];
 
 function layout(content) {
+  if (!ui.auth && !ui.demoMode) {
+    app.innerHTML = renderAuth();
+    bindAuth();
+    return;
+  }
+
   const nav = navItems.map(([id, icon, label]) => `
     <button data-tab="${id}" class="${ui.tab === id ? "active" : ""}">
       <span class="nav-icon">${icon}</span>${label}
@@ -53,7 +63,7 @@ function layout(content) {
       <main class="main">
         <header class="topbar">
           <div class="mira-id"><div class="avatar">M</div><div><div class="mira-name">Mira</div><div class="online">● Online · content lead</div></div></div>
-          <div class="top-actions"><button class="icon-button" data-action="seed-demo">Start test</button><button class="icon-button" data-action="new-draft">＋ Draft</button></div>
+          <div class="top-actions"><span class="account-pill">${accountLabel()}</span><button class="icon-button" data-action="seed-demo">Start test</button><button class="icon-button" data-action="new-draft">＋ Draft</button><button class="icon-button" data-action="logout">${ui.auth ? "Log out" : "Exit demo"}</button></div>
         </header>
         ${content}
       </main>
@@ -63,6 +73,53 @@ function layout(content) {
     ${ui.toast ? `<div class="toast">${escapeHtml(ui.toast)}</div>` : ""}
   `;
   bindGlobal();
+}
+
+function renderAuth() {
+  const isSignup = ui.authMode === "signup";
+  return `<main class="auth-page">
+    <section class="auth-hero">
+      <div class="brand auth-brand"><span class="brand-mark">B</span> Blidx</div>
+      <div class="eyebrow">Mira · first GTM agent</div>
+      <h1>${isSignup ? "Create your Blidx workspace." : "Welcome back to Blidx."}</h1>
+      <p class="lead">Sign in to keep your own profile, Content Bank, drafts, and LinkedIn workflow separate from the public demo.</p>
+      <div class="auth-points">
+        <div><strong>1/ Private workspace</strong><span>Your drafts and memories stay under your account.</span></div>
+        <div><strong>2/ Claude-backed Mira</strong><span>Chat, angle selection, and draft generation use your context.</span></div>
+        <div><strong>3/ LinkedIn workflow</strong><span>Prepare posts for OAuth publishing or manual posting.</span></div>
+      </div>
+    </section>
+    <section class="auth-card">
+      <h2>${isSignup ? "Sign up" : "Log in"}</h2>
+      <p class="muted">${isSignup ? "Use at least 8 characters for the password." : "Use the email and password you registered with."}</p>
+      <form id="auth-form">
+        ${isSignup ? '<div class="field"><label>Name</label><input class="input" name="user_name" placeholder="Jae" /></div>' : ""}
+        <div class="field"><label>Email</label><input class="input" name="email" type="email" required placeholder="you@example.com" /></div>
+        <div class="field"><label>Password</label><input class="input" name="password" type="password" required minlength="${isSignup ? 8 : 1}" placeholder="••••••••" /></div>
+        <button class="button" style="width:100%">${isSignup ? "Create account" : "Log in"}</button>
+      </form>
+      <button class="button ghost auth-switch" id="toggle-auth">${isSignup ? "Already have an account? Log in" : "New here? Create account"}</button>
+      <button class="button secondary auth-switch" id="continue-demo">Continue with public demo</button>
+    </section>
+  </main>`;
+}
+
+function bindAuth() {
+  document.querySelector("#auth-form")?.addEventListener("submit", submitAuth);
+  document.querySelector("#toggle-auth")?.addEventListener("click", () => {
+    ui.authMode = ui.authMode === "login" ? "signup" : "login";
+    render();
+  });
+  document.querySelector("#continue-demo")?.addEventListener("click", async () => {
+    ui.demoMode = true;
+    localStorage.setItem("blidx_demo", "true");
+    await refresh();
+  });
+}
+
+function accountLabel() {
+  if (ui.auth) return escapeHtml(ui.auth.user_name || ui.auth.email || "Account");
+  return "Public demo";
 }
 
 function bindGlobal() {
@@ -84,6 +141,9 @@ function bindGlobal() {
   });
   document.querySelectorAll('[data-action="seed-demo"]').forEach((button) => {
     button.onclick = seedDemo;
+  });
+  document.querySelectorAll('[data-action="logout"]').forEach((button) => {
+    button.onclick = logout;
   });
   document.querySelectorAll('[data-action="sample-draft"]').forEach((button) => {
     button.onclick = createSampleDraft;
@@ -243,7 +303,7 @@ function renderSettings() {
       ${field("Expertise (comma separated)", "expertise", p.expertise.join(", "), true)}
       <div class="field"><label>Posting frequency</label><select name="posting_frequency"><option value="1-2x_per_week" ${p.posting_frequency === "1-2x_per_week" ? "selected" : ""}>1–2× per week</option><option value="3-4x_per_week" ${p.posting_frequency === "3-4x_per_week" ? "selected" : ""}>3–4× per week</option><option value="5+_per_week" ${p.posting_frequency === "5+_per_week" ? "selected" : ""}>5+ per week</option></select></div>
       ${field("Tone", "tone", p.tone)}
-      <div class="field full"><button class="button">Save profile</button> <button type="button" class="button secondary" id="seed-demo">Load tester scenario</button> <button type="button" class="button ghost" id="reset-demo">Reset demo data</button></div>
+      <div class="field full"><button class="button">Save profile</button> <button type="button" class="button secondary" id="seed-demo">Load tester scenario</button> <button type="button" class="button ghost" id="reset-demo">Reset workspace data</button></div>
     </form>
     <div class="card" style="margin-top:16px"><div class="card-head"><h3>AI generation</h3><span class="badge ${anthropic?.configured ? "published" : "draft"}">${anthropic?.configured ? "Claude ready" : "Local fallback"}</span></div><p class="muted">${anthropic?.configured ? `Mira drafts use ${escapeHtml(anthropic.model)} with profile, writing samples, and Content Bank context.` : "Add ANTHROPIC_API_KEY in Render to enable live Claude generation. The local fallback remains testable and avoids the old repeated template."}</p></div>
     <div class="card" style="margin-top:16px"><div class="card-head"><h3>LinkedIn</h3><span class="badge ${linkedinClass}">${linkedinBadge}</span></div><p class="muted">${linkedin?.connected ? "LinkedIn is connected for this staging session. Draft cards can publish directly." : linkedin?.configured ? "OAuth URL generation is available. The redirect URL must exactly match the LinkedIn app settings; otherwise use the manual fallback." : "Use Copy & open LinkedIn on any draft. For full OAuth on staging, add the Render URL to LinkedIn redirect URLs or route app.blidx.com to this service."}</p>${linkedin?.connected ? "" : '<button class="button secondary" id="connect-linkedin">Connect LinkedIn</button>'}</div>
@@ -276,9 +336,36 @@ async function refresh() {
     api("/api/state"),
     api("/api/integrations/status").catch(() => null),
   ]);
+  if (ui.auth && state.auth && !state.auth.authenticated) {
+    localStorage.removeItem("blidx_auth");
+    ui.auth = null;
+    ui.demoMode = false;
+    localStorage.removeItem("blidx_demo");
+    showToast("Session expired. Please log in again.");
+    render();
+    return;
+  }
   ui.state = state;
   ui.integrations = integrations;
   render();
+}
+
+async function submitAuth(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const payload = Object.fromEntries(form.entries());
+  const path = ui.authMode === "signup" ? "/auth/register" : "/auth/login";
+  try {
+    const auth = await api(path, { method: "POST", body: JSON.stringify(payload) });
+    ui.auth = auth;
+    ui.demoMode = false;
+    localStorage.setItem("blidx_auth", JSON.stringify(auth));
+    localStorage.removeItem("blidx_demo");
+    await refresh();
+    showToast(ui.authMode === "signup" ? "Workspace created" : "Logged in");
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 async function sendChatMessage(event) {
@@ -415,7 +502,7 @@ async function connectLinkedIn() {
 
 async function resetDemo() {
   await api("/api/reset", { method: "POST" });
-  ui.notice = ""; ui.tab = "chat"; await refresh(); showToast("Demo data reset");
+  ui.notice = ""; ui.tab = "chat"; await refresh(); showToast(ui.auth ? "Workspace reset" : "Demo data reset");
 }
 
 async function seedDemo() {
@@ -429,6 +516,16 @@ async function seedDemo() {
 function showToast(message) {
   ui.toast = message; render();
   setTimeout(() => { ui.toast = ""; render(); }, 2200);
+}
+
+function logout() {
+  ui.auth = null;
+  ui.demoMode = false;
+  ui.state = null;
+  ui.integrations = null;
+  localStorage.removeItem("blidx_auth");
+  localStorage.removeItem("blidx_demo");
+  render();
 }
 
 refresh().catch((error) => layout(`<div class="page"><div class="notice">Could not load the app: ${escapeHtml(error.message)}</div></div>`));

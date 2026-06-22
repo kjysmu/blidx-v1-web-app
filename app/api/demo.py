@@ -1,11 +1,12 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api.deps import use_request_user
 from app.demo_store import demo_store
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(use_request_user)])
 
 
 class ProfilePayload(BaseModel):

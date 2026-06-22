@@ -1,6 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import RedirectResponse
 
+from app.auth_store import auth_store
+from app.core.security import create_access_token, decode_access_token
 from app.demo_store import demo_store
 from app.schemas.auth import RegisterRequest, LoginRequest, AuthResponse
 from app.integrations.linkedin import LinkedInClient
@@ -10,29 +12,52 @@ router = APIRouter()
 
 @router.post("/register", response_model=AuthResponse)
 def register(payload: RegisterRequest):
-    # TODO Day 3–4:
-    # 1. Check email not used
-    # 2. Hash password
-    # 3. Create user
-    # 4. Return JWT
+    try:
+        user = auth_store.register(
+            payload.email,
+            payload.password,
+            payload.user_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    demo_store.ensure_user_state(user)
     return {
-        "access_token": "placeholder_token",
+        "access_token": create_access_token(user["id"]),
         "token_type": "bearer",
-        "user_id": "placeholder_user_id",
+        "user_id": user["id"],
+        "email": user["email"],
+        "user_name": user.get("user_name"),
     }
 
 
 @router.post("/login", response_model=AuthResponse)
 def login(payload: LoginRequest):
-    # TODO Day 3–4:
-    # 1. Find user by email
-    # 2. Verify password
-    # 3. Return JWT
+    user = auth_store.authenticate(payload.email, payload.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    demo_store.ensure_user_state(user)
     return {
-        "access_token": "placeholder_token",
+        "access_token": create_access_token(user["id"]),
         "token_type": "bearer",
-        "user_id": "placeholder_user_id",
+        "user_id": user["id"],
+        "email": user["email"],
+        "user_name": user.get("user_name"),
     }
+
+
+@router.get("/me")
+def me(authorization: str | None = Header(default=None)) -> dict:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    user_id = decode_access_token(authorization.split(" ", 1)[1].strip())
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid bearer token")
+    user = auth_store.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
 
 
 @router.get("/linkedin/callback")
