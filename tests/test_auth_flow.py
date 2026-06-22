@@ -71,3 +71,39 @@ def test_authenticated_workspaces_are_isolated():
     assert second_state["user"]["user_name"] == "Second User"
     assert len(first_state["content_bank"]) == 1
     assert second_state["content_bank"] == []
+
+
+def test_authenticated_user_can_complete_onboarding():
+    auth = register_user(name="Onboard User")
+    headers = {"Authorization": f"Bearer {auth['access_token']}"}
+
+    initial_state = client.get("/api/state", headers=headers).json()
+    assert initial_state["onboarding_completed"] is False
+
+    response = client.post(
+        "/api/onboarding/complete",
+        headers=headers,
+        json={
+            "first_name": "Mina",
+            "role": "Founder",
+            "company_name": "CareLoop",
+            "company_website": "https://careloop.example",
+            "industry": "Digital health",
+            "company_description": "CareLoop helps clinics keep patients connected between sessions.",
+            "audience": ["Founders", "Clinicians"],
+            "expertise": ["Mental health", "Care operations"],
+            "content_types": ["Industry insights", "Personal stories"],
+            "posting_frequency": "3-4x_per_week",
+            "tone": "Warm & personal",
+            "writing_style": "Reflective and practical.",
+            "first_memory": "I spoke with a clinician who said follow-up care is where patients often feel alone.",
+        },
+    )
+
+    assert response.status_code == 200
+    state = response.json()
+    assert state["onboarding_completed"] is True
+    assert state["profile"]["company_name"] == "CareLoop"
+    assert state["profile"]["audience"] == ["Founders", "Clinicians"]
+    assert len(state["content_bank"]) == 1
+    assert "clinician" in state["content_bank"][0]["raw_text"]

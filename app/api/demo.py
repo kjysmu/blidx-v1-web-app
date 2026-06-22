@@ -53,6 +53,22 @@ class LinkedInTrackPayload(BaseModel):
     url: str | None = None
 
 
+class OnboardingPayload(BaseModel):
+    first_name: str = Field(min_length=1)
+    role: str | None = None
+    company_name: str = Field(min_length=1)
+    company_website: str | None = None
+    industry: str = Field(min_length=1)
+    company_description: str = Field(min_length=3)
+    audience: list[str] = Field(default_factory=list)
+    expertise: list[str] = Field(default_factory=list)
+    content_types: list[str] = Field(default_factory=list)
+    posting_frequency: str = "3-4x_per_week"
+    tone: str = "Insightful & measured"
+    writing_style: str | None = None
+    first_memory: str | None = None
+
+
 @router.get("/state")
 def get_state() -> dict[str, Any]:
     return demo_store.snapshot()
@@ -66,6 +82,12 @@ def update_profile(payload: ProfilePayload) -> dict[str, Any]:
 @router.post("/content-bank")
 def create_content_bank_entry(payload: MemoryPayload) -> dict[str, Any]:
     return demo_store.add_memory(payload.raw_text, payload.category)
+
+
+@router.post("/onboarding/complete")
+def complete_onboarding(payload: OnboardingPayload) -> dict[str, Any]:
+    profile = payload.model_dump(exclude={"first_memory"})
+    return demo_store.complete_onboarding(profile, payload.first_memory)
 
 
 @router.post("/drafts")

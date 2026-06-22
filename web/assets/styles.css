@@ -231,6 +231,9 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .auth-card h2 { font-family: "Playfair Display"; font-size: 32px; margin-bottom: 8px; }
 .auth-card form { display: grid; gap: 15px; margin-top: 18px; }
 .auth-switch { width: 100%; margin-top: 10px; }
+.onboarding-page { max-width: 980px; }
+.onboarding-form { margin-top: 22px; }
+.onboarding-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 
 @media (max-width: 760px) {
   .shell { display: block; padding-bottom: 72px; }
@@ -244,6 +247,7 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .auth-hero { padding: 10px 2px 18px; }
   .auth-brand { margin-bottom: 28px; }
   .auth-card { border-radius: 18px; }
+  .onboarding-actions { display: grid; }
   .grid, .form-grid { grid-template-columns: 1fr; }
   .checklist { grid-template-columns: 1fr; }
   .field.full { grid-column: auto; }

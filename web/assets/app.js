@@ -152,9 +152,64 @@ function bindGlobal() {
 
 function render() {
   if (!ui.state) return layout('<div class="page"><div class="empty">Loading Blidx…</div></div>');
+  if (ui.auth && ui.state.onboarding_completed === false) {
+    layout(renderOnboarding());
+    bindOnboarding();
+    return;
+  }
   const views = { chat: renderChat, bank: renderBank, library: renderLibrary, calendar: renderCalendar, settings: renderSettings };
   layout(views[ui.tab]());
   bindView();
+}
+
+function renderOnboarding() {
+  const p = ui.state.profile || {};
+  return `<section class="page onboarding-page">
+    <div class="eyebrow">Workspace setup</div>
+    <h1>Set up Mira’s context.</h1>
+    <p class="lead">This takes one minute. Mira will use these details for chat, Content Bank decisions, and LinkedIn drafts.</p>
+    <form class="card form-grid onboarding-form" id="onboarding-form">
+      ${field("First name", "first_name", p.first_name || accountLabel())}
+      ${field("Role", "role", p.role || "Founder")}
+      ${field("Company", "company_name", p.company_name || "")}
+      ${field("Website", "company_website", p.company_website || "")}
+      ${field("Industry", "industry", p.industry || "")}
+      ${field("Company description", "company_description", p.company_description || "", true)}
+      ${field("Audience (comma separated)", "audience", (p.audience || ["Founders", "Industry Peers"]).join(", "), true)}
+      ${field("Expertise (comma separated)", "expertise", (p.expertise || []).join(", "), true)}
+      <div class="field"><label>Posting frequency</label><select name="posting_frequency"><option value="1-2x_per_week">1–2× per week</option><option value="3-4x_per_week" selected>3–4× per week</option><option value="5+_per_week">5+ per week</option></select></div>
+      <div class="field"><label>Tone</label><select name="tone"><option>Insightful & measured</option><option>Bold & opinionated</option><option>Warm & personal</option><option>Data-driven & practical</option></select></div>
+      ${field("Writing style notes", "writing_style", p.writing_style || "Reflective, specific, founder-led, and practical.", true)}
+      <div class="field full"><label>First Content Bank memory</label><textarea name="first_memory" placeholder="Example: This week I spoke with a founder who said content feels hard because the real work is scattered across notes, calls, and decisions."></textarea></div>
+      <div class="field full onboarding-actions"><button class="button">Complete setup</button><button type="button" class="button ghost" id="skip-onboarding">Skip for now</button></div>
+    </form>
+  </section>`;
+}
+
+function bindOnboarding() {
+  document.querySelector("#onboarding-form")?.addEventListener("submit", completeOnboarding);
+  document.querySelector("#skip-onboarding")?.addEventListener("click", async () => {
+    const p = ui.state.profile;
+    await api("/api/onboarding/complete", {
+      method: "POST",
+      body: JSON.stringify({
+        first_name: p.first_name || "User",
+        role: p.role || "Founder",
+        company_name: p.company_name || "My company",
+        company_website: p.company_website || "",
+        industry: p.industry || "Startup",
+        company_description: p.company_description || "A founder-led company building toward product-market fit.",
+        audience: p.audience || ["Founders"],
+        expertise: p.expertise || [],
+        content_types: p.content_types || ["Industry insights"],
+        posting_frequency: p.posting_frequency || "3-4x_per_week",
+        tone: p.tone || "Insightful & measured",
+        writing_style: p.writing_style || "",
+      }),
+    });
+    await refresh();
+    showToast("Setup skipped. You can edit Settings anytime.");
+  });
 }
 
 function renderChat() {
@@ -364,6 +419,25 @@ async function submitAuth(event) {
     await refresh();
     showToast(ui.authMode === "signup" ? "Workspace created" : "Logged in");
   } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function completeOnboarding(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const payload = Object.fromEntries(form.entries());
+  payload.audience = payload.audience.split(",").map((v) => v.trim()).filter(Boolean);
+  payload.expertise = payload.expertise.split(",").map((v) => v.trim()).filter(Boolean);
+  payload.content_types = ["Industry insights", "Personal stories", "Lessons learned"];
+  try {
+    ui.loading = true;
+    await api("/api/onboarding/complete", { method: "POST", body: JSON.stringify(payload) });
+    ui.loading = false;
+    await refresh();
+    showToast("Workspace setup complete");
+  } catch (error) {
+    ui.loading = false;
     showToast(error.message);
   }
 }

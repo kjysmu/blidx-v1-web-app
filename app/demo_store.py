@@ -74,6 +74,7 @@ class DemoStore:
             },
             "content_bank": [],
             "posts": [],
+            "onboarding_completed": user is None,
             "messages": [
                 {
                     "id": str(uuid.uuid4()),
@@ -142,6 +143,29 @@ class DemoStore:
             state["profile"].update(profile)
             self._write(state)
             return deepcopy(state["profile"])
+
+    def complete_onboarding(self, profile: dict, first_memory: str | None = None) -> dict:
+        with self.lock:
+            state = self._read()
+            state["profile"].update(profile)
+            state["onboarding_completed"] = True
+            if first_memory and first_memory.strip():
+                state["content_bank"].insert(0, self._memory_entry(first_memory))
+            first_name = state["profile"].get("first_name") or "there"
+            state["messages"] = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "role": "mira",
+                    "content": (
+                        f"Welcome, {first_name}. I set up your Blidx workspace. "
+                        "Tell me what happened this week, ask for content angles, or ask me to draft your first LinkedIn post."
+                    ),
+                    "created_at": utc_now().isoformat(),
+                    "kind": "message",
+                }
+            ]
+            self._write(state)
+            return self._public_state(state)
 
     def add_memory(self, raw_text: str, category: str | None = None) -> dict:
         category = category or self._categorize(raw_text)
@@ -392,7 +416,8 @@ class DemoStore:
 
     def reset(self) -> dict:
         with self.lock:
-            state = self._initial_state()
+            user = self._read().get("user") if current_user_id.get() else None
+            state = self._initial_state(user)
             self._write(state)
             return self._public_state(state)
 
@@ -485,6 +510,7 @@ class DemoStore:
             "name": "Malia founder-test scenario",
             "next_prompt": "human connection versus AI in mental health",
         }
+        state["onboarding_completed"] = True
         state["messages"] = [
             {
                 "id": str(uuid.uuid4()),
@@ -503,6 +529,7 @@ class DemoStore:
     def _normalize_state(state: dict) -> dict:
         state.setdefault("content_bank", [])
         state.setdefault("posts", [])
+        state.setdefault("onboarding_completed", True if state.get("test_scenario") else False)
         state.setdefault(
             "messages",
             [
