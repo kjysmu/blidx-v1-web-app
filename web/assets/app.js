@@ -20,8 +20,9 @@ const api = async (path, options = {}) => {
     headers: { "Content-Type": "application/json", ...authHeaders, ...(options.headers || {}) },
     ...options,
   });
-  if (!response.ok) throw new Error((await response.json()).detail || "Request failed");
-  return response.json();
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.detail || payload.message || "Request failed");
+  return payload;
 };
 
 const escapeHtml = (value = "") =>
@@ -34,6 +35,7 @@ const navItems = [
   ["bank", "▦", "Bank"],
   ["library", "▤", "Library"],
   ["calendar", "□", "Calendar"],
+  ["analytics", "⌁", "Analytics"],
   ["settings", "⚙", "Settings"],
 ];
 
@@ -63,7 +65,7 @@ function layout(content) {
       <main class="main">
         <header class="topbar">
           <div class="mira-id"><div class="avatar">M</div><div><div class="mira-name">Mira</div><div class="online">● Online · content lead</div></div></div>
-          <div class="top-actions"><span class="account-pill">${accountLabel()}</span><button class="icon-button" data-action="seed-demo">Start test</button><button class="icon-button" data-action="new-draft">＋ Draft</button><button class="icon-button" data-action="logout">${ui.auth ? "Log out" : "Exit demo"}</button></div>
+          <div class="top-actions"><span class="account-pill">${accountLabel()}</span><button class="icon-button" data-action="new-draft">＋ Draft</button><button class="icon-button" data-action="logout">${ui.auth ? "Log out" : "Exit demo"}</button></div>
         </header>
         ${content}
       </main>
@@ -139,9 +141,6 @@ function bindGlobal() {
       }, 0);
     };
   });
-  document.querySelectorAll('[data-action="seed-demo"]').forEach((button) => {
-    button.onclick = seedDemo;
-  });
   document.querySelectorAll('[data-action="logout"]').forEach((button) => {
     button.onclick = logout;
   });
@@ -157,7 +156,7 @@ function render() {
     bindOnboarding();
     return;
   }
-  const views = { chat: renderChat, bank: renderBank, library: renderLibrary, calendar: renderCalendar, settings: renderSettings };
+  const views = { chat: renderChat, bank: renderBank, library: renderLibrary, calendar: renderCalendar, analytics: renderAnalytics, settings: renderSettings };
   layout(views[ui.tab]());
   bindView();
 }
@@ -226,7 +225,7 @@ function renderChat() {
       <div class="eyebrow">Your content workdesk</div>
       <h1>Good ${new Date().getHours() < 12 ? "morning" : "afternoon"}, ${escapeHtml(profile.first_name)}.</h1>
       <p class="lead">Chat with Mira like a content partner. Share a moment, ask for an angle, or say “Draft a post about…” and I’ll create a review-ready LinkedIn draft.</p>
-      ${testerGuide()}
+      ${workflowGuide()}
       <div class="grid">
         <div class="card"><div class="card-head"><h3>This week</h3><span class="badge ${published >= goal ? "published" : "pending"}">${published}/${goal} posts</span></div><div class="metric">${Math.min(Math.round((published / goal) * 100), 100)}%</div><div class="progress"><span style="width:${Math.min((published / goal) * 100, 100)}%"></span></div><div class="muted small">Based on your ${escapeHtml(profile.posting_frequency.replaceAll("_", " "))} goal.</div></div>
         <div class="card"><div class="card-head"><h3>Content Bank</h3><span class="badge published">${ui.state.content_bank.length} entries</span></div><p class="muted">Your latest real-world context makes every draft more personal.</p><button class="button secondary" data-tab="bank">Add today’s insight</button></div>
@@ -241,8 +240,17 @@ function renderChat() {
           <input class="input" id="chat-message" placeholder="Message Mira… try: Draft a post about human connection versus AI in mental health" required minlength="2" />
           <button class="button" ${ui.loading ? "disabled" : ""}>${ui.loading ? "Working…" : "Send"}</button>
         </form>
+        <div class="prompt-row">
+          ${quickPrompt("What should I post about today?")}
+          ${quickPrompt("Give me 3 angles from my Content Bank")}
+          ${quickPrompt("Draft a post from my latest memory")}
+        </div>
       </div>
     </section>`;
+}
+
+function quickPrompt(text) {
+  return `<button class="prompt-chip" data-prompt="${escapeHtml(text)}">${escapeHtml(text)}</button>`;
 }
 
 function messageBubble(message) {
@@ -261,33 +269,33 @@ function draftCard(post) {
       <button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>
       <button class="button secondary" data-draft-action="linkedin" data-id="${post.id}">${publishLabel}</button>
       <button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button>
+      <button class="button ghost" data-draft-action="copy" data-id="${post.id}">Copy</button>
       <button class="button ghost" data-draft-action="save" data-id="${post.id}">Save draft</button>
-      <button class="button danger" data-draft-action="delete" data-id="${post.id}">Delete</button>
+      <button class="button danger" data-draft-action="delete" data-id="${post.id}">Skip</button>
     </div>
   </article>`;
 }
 
-function testerGuide() {
-  const loaded = ui.state.test_scenario?.loaded;
+function workflowGuide() {
   const hasMemory = ui.state.content_bank.length > 0;
   const hasDraft = ui.state.posts.some((post) => post.status === "pending");
   const hasLibrary = ui.state.posts.some((post) => post.status !== "deleted");
   const hasScheduled = ui.state.posts.some((post) => ["scheduled", "published"].includes(post.status));
   const items = [
-    ["Load tester profile + Content Bank", loaded],
+    ["Save one real moment to Content Bank", hasMemory],
     ["Generate one review-ready draft", hasDraft || hasLibrary],
-    ["Review the draft action buttons", hasLibrary],
-    ["Check Library and Calendar states", hasScheduled],
+    ["Edit, copy, save, approve, or skip the draft", hasLibrary],
+    ["Check Library, Calendar, and Analytics states", hasScheduled],
   ];
-  return `<div class="card tester-card">
-    <div class="card-head"><div><h3>Tester path</h3><p class="muted small">Use this path first. It resets stale demo data and makes the MVP testable in a predictable order.</p></div><span class="badge ${loaded ? "published" : "draft"}">${loaded ? "ready" : "start here"}</span></div>
+  return `<div class="card workflow-card">
+    <div class="card-head"><div><h3>Recommended test path</h3><p class="muted small">This uses your real workspace data. No preloaded scenario required.</p></div><span class="badge ${hasMemory ? "published" : "draft"}">${hasMemory ? "in progress" : "start here"}</span></div>
     <div class="checklist">${items.map(([label, done]) => `<div class="check ${done ? "done" : ""}"><span>${done ? "✓" : "○"}</span>${label}</div>`).join("")}</div>
-    <div class="tester-actions">
-      <button class="button" data-action="seed-demo">${loaded ? "Restart test scenario" : "Start test scenario"}</button>
-      <button class="button secondary" data-action="sample-draft" ${hasMemory ? "" : "disabled"}>Generate sample draft</button>
+    <div class="workflow-actions">
+      <button class="button" data-tab="bank">${hasMemory ? "Add another memory" : "Add first memory"}</button>
+      <button class="button secondary" data-action="sample-draft" ${hasMemory ? "" : "disabled"}>Draft from latest memory</button>
       <button class="button ghost" data-tab="bank">Open Content Bank</button>
     </div>
-    <p class="muted small">Mira now works as a chat flow. Claude is used when the server key is configured; otherwise the demo uses a safer local fallback. LinkedIn supports OAuth publishing when connected and a manual copy/open fallback when not.</p>
+    <p class="muted small">Mira can chat, suggest angles, draft, revise, and move posts into Library/Calendar. LinkedIn has a manual copy/open fallback until OAuth is fully connected.</p>
   </div>`;
 }
 
@@ -315,8 +323,20 @@ function renderBank() {
 function renderLibrary() {
   const posts = ui.state.posts.filter((post) => post.status !== "deleted");
   return `<section class="page"><div class="eyebrow">Content pipeline</div><h1>Library</h1><p class="lead">Every draft, scheduled post, and published post stays visible here.</p>
-    <div class="list">${posts.length ? posts.map((post) => `<div class="list-item"><div class="list-top"><div><strong>${escapeHtml(post.title)}</strong><p>${escapeHtml(post.content.slice(0, 180))}${post.content.length > 180 ? "…" : ""}</p></div><span class="badge ${post.status}">${post.status}</span></div><div class="small muted" style="margin-top:10px">${post.char_count} characters · v${post.version}</div></div>`).join("") : '<div class="empty">No posts yet. Draft one with Mira.</div>'}</div>
+    <div class="list">${posts.length ? posts.map(libraryItem).join("") : '<div class="empty">No posts yet. Draft one with Mira.</div>'}</div>
   </section>`;
+}
+
+function libraryItem(post) {
+  return `<div class="list-item">
+    <div class="list-top"><div><strong>${escapeHtml(post.title)}</strong><p>${escapeHtml(post.content.slice(0, 220))}${post.content.length > 220 ? "…" : ""}</p></div><span class="badge ${post.status}">${post.status}</span></div>
+    <div class="small muted" style="margin-top:10px">${post.char_count} characters · v${post.version} · ${escapeHtml(post.generation_provider || "template")}</div>
+    <div class="inline-actions">
+      ${post.status === "pending" || post.status === "draft" ? `<button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button><button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>` : ""}
+      <button class="button ghost" data-draft-action="copy" data-id="${post.id}">Copy</button>
+      ${post.status !== "published" ? `<button class="button secondary" data-draft-action="linkedin" data-id="${post.id}">${ui.integrations?.linkedin?.connected ? "Publish to LinkedIn" : "Copy & open LinkedIn"}</button>` : ""}
+    </div>
+  </div>`;
 }
 
 function renderCalendar() {
@@ -339,6 +359,37 @@ function renderCalendar() {
   </section>`;
 }
 
+function renderAnalytics() {
+  const posts = ui.state.posts.filter((post) => post.status !== "deleted");
+  const published = posts.filter((post) => post.status === "published").length;
+  const scheduled = posts.filter((post) => post.status === "scheduled").length;
+  const pending = posts.filter((post) => ["pending", "draft"].includes(post.status)).length;
+  const bank = ui.state.content_bank;
+  const highPotential = bank.filter((entry) => entry.content_potential === "high").length;
+  const avgChars = posts.length ? Math.round(posts.reduce((sum, post) => sum + (post.char_count || 0), 0) / posts.length) : 0;
+  const categoryCounts = bank.reduce((acc, entry) => {
+    acc[entry.category] = (acc[entry.category] || 0) + 1;
+    return acc;
+  }, {});
+  const categories = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]);
+  return `<section class="page"><div class="eyebrow">Progress</div><h1>Analytics</h1><p class="lead">A lightweight MVP view of whether the content workflow is moving: memories captured, drafts created, and posts moved toward LinkedIn.</p>
+    <div class="stats-grid">
+      ${statCard("Content Bank", bank.length, `${highPotential} high-potential entries`)}
+      ${statCard("Drafts", pending, "Ready for review or revision")}
+      ${statCard("Scheduled", scheduled, "Placed on the calendar")}
+      ${statCard("Published", published, "Marked as posted")}
+    </div>
+    <div class="grid" style="margin-top:18px">
+      <div class="card"><div class="card-head"><h3>Pipeline health</h3><span class="badge ${posts.length ? "published" : "draft"}">${posts.length ? "active" : "empty"}</span></div><p class="muted">${posts.length ? `Average draft length is ${avgChars} characters. The next improvement is to keep moving pending drafts into either scheduled, published, or skipped states.` : "Create a draft from Chat to start measuring the workflow."}</p></div>
+      <div class="card"><div class="card-head"><h3>Memory mix</h3><span class="badge draft">${categories.length || 0} categories</span></div>${categories.length ? categories.map(([name, count]) => `<div class="bar-row"><span>${escapeHtml(name)}</span><strong>${count}</strong></div>`).join("") : '<p class="muted">No Content Bank entries yet.</p>'}</div>
+    </div>
+  </section>`;
+}
+
+function statCard(label, value, helper) {
+  return `<div class="card stat-card"><div class="muted small">${label}</div><div class="metric">${value}</div><p class="muted small">${escapeHtml(helper)}</p></div>`;
+}
+
 function renderSettings() {
   const p = ui.state.profile;
   const anthropic = ui.integrations?.anthropic;
@@ -358,7 +409,7 @@ function renderSettings() {
       ${field("Expertise (comma separated)", "expertise", p.expertise.join(", "), true)}
       <div class="field"><label>Posting frequency</label><select name="posting_frequency"><option value="1-2x_per_week" ${p.posting_frequency === "1-2x_per_week" ? "selected" : ""}>1–2× per week</option><option value="3-4x_per_week" ${p.posting_frequency === "3-4x_per_week" ? "selected" : ""}>3–4× per week</option><option value="5+_per_week" ${p.posting_frequency === "5+_per_week" ? "selected" : ""}>5+ per week</option></select></div>
       ${field("Tone", "tone", p.tone)}
-      <div class="field full"><button class="button">Save profile</button> <button type="button" class="button secondary" id="seed-demo">Load tester scenario</button> <button type="button" class="button ghost" id="reset-demo">Reset workspace data</button></div>
+      <div class="field full"><button class="button">Save profile</button> <button type="button" class="button ghost" id="reset-demo">Reset workspace data</button></div>
     </form>
     <div class="card" style="margin-top:16px"><div class="card-head"><h3>AI generation</h3><span class="badge ${anthropic?.configured ? "published" : "draft"}">${anthropic?.configured ? "Claude ready" : "Local fallback"}</span></div><p class="muted">${anthropic?.configured ? `Mira drafts use ${escapeHtml(anthropic.model)} with profile, writing samples, and Content Bank context.` : "Add ANTHROPIC_API_KEY in Render to enable live Claude generation. The local fallback remains testable and avoids the old repeated template."}</p></div>
     <div class="card" style="margin-top:16px"><div class="card-head"><h3>LinkedIn</h3><span class="badge ${linkedinClass}">${linkedinBadge}</span></div><p class="muted">${linkedin?.connected ? "LinkedIn is connected for this staging session. Draft cards can publish directly." : linkedin?.configured ? "OAuth URL generation is available. The redirect URL must exactly match the LinkedIn app settings; otherwise use the manual fallback." : "Use Copy & open LinkedIn on any draft. For full OAuth on staging, add the Render URL to LinkedIn redirect URLs or route app.blidx.com to this service."}</p>${linkedin?.connected ? "" : '<button class="button secondary" id="connect-linkedin">Connect LinkedIn</button>'}</div>
@@ -376,8 +427,10 @@ function bindView() {
   document.querySelector("#bank-form")?.addEventListener("submit", addMemory);
   document.querySelector("#profile-form")?.addEventListener("submit", saveProfile);
   document.querySelector("#reset-demo")?.addEventListener("click", resetDemo);
-  document.querySelector("#seed-demo")?.addEventListener("click", seedDemo);
   document.querySelector("#connect-linkedin")?.addEventListener("click", connectLinkedIn);
+  document.querySelectorAll("[data-prompt]").forEach((button) => {
+    button.onclick = () => submitPrompt(button.dataset.prompt);
+  });
   document.querySelectorAll("[data-category]").forEach((button) => {
     button.onclick = () => { ui.selectedCategory = button.dataset.category; render(); };
   });
@@ -446,6 +499,11 @@ async function sendChatMessage(event) {
   event.preventDefault();
   const input = document.querySelector("#chat-message");
   const message = input.value.trim();
+  input.value = "";
+  await submitPrompt(message);
+}
+
+async function submitPrompt(message) {
   if (!message) return;
   ui.loading = true; render();
   try {
@@ -463,7 +521,8 @@ async function createSampleDraft() {
   ui.tab = "chat";
   ui.loading = true; render();
   try {
-    const topic = ui.state.test_scenario?.next_prompt || "human connection versus AI in mental health";
+    const latest = ui.state.content_bank[0]?.raw_text;
+    const topic = latest || `${ui.state.profile.company_name || "my company"} founder insight from this week`;
     await api("/api/chat/message", {
       method: "POST",
       body: JSON.stringify({ message: `Draft a post about ${topic}` }),
@@ -480,10 +539,14 @@ async function createSampleDraft() {
 async function addMemory(event) {
   event.preventDefault();
   const raw_text = document.querySelector("#bank-text").value;
-  const entry = await api("/api/content-bank", { method: "POST", body: JSON.stringify({ raw_text, category: ui.selectedCategory }) });
-  ui.notice = `Saved to Content Bank · ${entry.category} · Fresh`;
-  await refresh();
-  ui.notice = `Saved to Content Bank · ${entry.category} · Fresh`; render();
+  try {
+    const entry = await api("/api/content-bank", { method: "POST", body: JSON.stringify({ raw_text, category: ui.selectedCategory }) });
+    ui.notice = `Saved to Content Bank · ${entry.category} · Fresh`;
+    await refresh();
+    ui.notice = `Saved to Content Bank · ${entry.category} · Fresh`; render();
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 async function saveProfile(event) {
@@ -499,18 +562,33 @@ async function saveProfile(event) {
 
 function handleDraftAction(action, id) {
   if (action === "approve") {
-    ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>When should Mira publish?</h3><p class="muted">Use “Copy & open LinkedIn” for the real tester workflow today. Scheduling still keeps Library and Calendar state organized.</p><div class="modal-actions"><button class="button ghost" data-schedule="now">Mark posted</button><button class="button" data-schedule="best_time">Best time</button></div></div></div>`;
+    ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>When should Mira publish?</h3><p class="muted">Use “Copy & open LinkedIn” for the safest live workflow today. Scheduling still keeps Library and Calendar state organized.</p><div class="modal-actions"><button class="button ghost" data-schedule="now">Mark posted</button><button class="button" data-schedule="best_time">Best time</button></div></div></div>`;
     render();
     document.querySelectorAll("[data-schedule]").forEach((button) => button.onclick = () => approveDraft(id, button.dataset.schedule));
   } else if (action === "linkedin") {
     copyAndOpenLinkedIn(id);
+  } else if (action === "copy") {
+    copyDraft(id);
   } else if (action === "edit") {
     ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>Tell Mira what to change</h3><textarea id="edit-instructions" placeholder="Try: Make it shorter, bolder, or more personal."></textarea><div class="modal-actions"><button class="button ghost" id="cancel-modal">Cancel</button><button class="button" id="submit-edit">Revise draft</button></div></div></div>`;
     render();
     document.querySelector("#cancel-modal").onclick = () => { ui.modal = null; render(); };
     document.querySelector("#submit-edit").onclick = () => editDraft(id);
   } else {
-    api(`/api/drafts/${id}/${action}`, { method: "POST" }).then(() => refresh()).then(() => showToast(action === "save" ? "Saved to Library" : "Draft deleted"));
+    api(`/api/drafts/${id}/${action}`, { method: "POST" }).then(() => refresh()).then(() => showToast(action === "save" ? "Saved to Library" : "Draft skipped"));
+  }
+}
+
+async function copyDraft(id) {
+  const post = ui.state.posts.find((item) => item.id === id);
+  if (!post) return;
+  try {
+    await navigator.clipboard.writeText(post.content);
+    showToast("Draft copied");
+  } catch (error) {
+    ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>Copy draft</h3><p class="muted">Clipboard access was blocked. Select and copy the text below.</p><textarea readonly>${escapeHtml(post.content)}</textarea><div class="modal-actions"><button class="button" id="cancel-modal">Done</button></div></div></div>`;
+    render();
+    document.querySelector("#cancel-modal").onclick = () => { ui.modal = null; render(); };
   }
 }
 

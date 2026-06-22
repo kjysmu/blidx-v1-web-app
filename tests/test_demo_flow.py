@@ -185,3 +185,27 @@ def test_mira_understands_draft_follow_up_after_angle_prompt():
     assert "What does draft it" not in payload["post"]["content"]
 
     client.post("/api/reset")
+
+
+def test_mira_drafts_from_latest_memory_phrase():
+    client.post("/api/reset")
+    client.post(
+        "/api/content-bank",
+        json={
+            "category": "insights",
+            "raw_text": "A founder told me content feels hard because useful context is scattered across notes, calls, and decisions.",
+        },
+    )
+
+    response = client.post(
+        "/api/chat/message",
+        json={"message": "Draft a post from my latest memory"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "draft_created" in payload["actions"]
+    assert "scattered across notes" in payload["post"]["content"]
+    assert payload["post"]["title"] != "Draft a post from my latest memory"
+
+    client.post("/api/reset")

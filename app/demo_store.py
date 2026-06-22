@@ -292,7 +292,11 @@ class DemoStore:
             wants_draft = self._wants_draft(content)
             followup_draft = self._is_affirmative_draft_request(state, content)
             if wants_draft or followup_draft:
-                topic = self._topic_from_context(state) if followup_draft else self._extract_topic(content)
+                topic = (
+                    self._topic_from_context(state)
+                    if followup_draft or self._wants_latest_context(content)
+                    else self._extract_topic(content)
+                )
                 post = self._draft(state, topic, "chat")
                 state["posts"].insert(0, post)
                 reply = (
@@ -332,22 +336,24 @@ class DemoStore:
             if post is None:
                 return None
 
-            content = post["content"]
-            lowered = instructions.lower()
-            if "short" in lowered:
-                paragraphs = [item for item in content.split("\n\n") if item]
-                content = "\n\n".join(paragraphs[:4])
-            if "bold" in lowered or "stronger hook" in lowered:
-                lines = content.splitlines()
-                lines[0] = f"Most founders are getting this wrong: {lines[0]}"
-                content = "\n".join(lines)
-            if "personal" in lowered:
-                content += (
-                    "\n\nThis is the operating lesson I am carrying into "
-                    "the next stage of building Blidx."
-                )
-            if content == post["content"]:
-                content += f"\n\nEdit note applied: {instructions.strip()}"
+            content = self._generate_ai_revision(state, post, instructions)
+            if not content:
+                content = post["content"]
+                lowered = instructions.lower()
+                if "short" in lowered:
+                    paragraphs = [item for item in content.split("\n\n") if item]
+                    content = "\n\n".join(paragraphs[:4])
+                if "bold" in lowered or "stronger hook" in lowered:
+                    lines = content.splitlines()
+                    lines[0] = f"Most founders are getting this wrong: {lines[0]}"
+                    content = "\n".join(lines)
+                if "personal" in lowered:
+                    content += (
+                        "\n\nThis is the operating lesson I am carrying into "
+                        "the next stage of building Blidx."
+                    )
+                if content == post["content"]:
+                    content += f"\n\nEdit note applied: {instructions.strip()}"
 
             post["content"] = content[:3000]
             post["char_count"] = len(post["content"])
@@ -796,6 +802,22 @@ class DemoStore:
         return topic or content.strip()
 
     @staticmethod
+    def _wants_latest_context(content: str) -> bool:
+        lowered = content.lower()
+        return any(
+            phrase in lowered
+            for phrase in (
+                "latest memory",
+                "latest content bank",
+                "from my memory",
+                "from my content bank",
+                "from the content bank",
+                "from this angle",
+                "from that angle",
+            )
+        )
+
+    @staticmethod
     def _is_affirmative_draft_request(state: dict, content: str) -> bool:
         lowered = content.lower().strip(" .!?,")
         affirmative = (
@@ -863,9 +885,12 @@ class DemoStore:
             sources.append({"type": "ai", "title": f"Generated with {provider}"})
 
         now = utc_now()
+        title = hook[:70].strip()
+        if title:
+            title = title[0].upper() + title[1:]
         return {
             "id": str(uuid.uuid4()),
-            "title": hook[:70].capitalize(),
+            "title": title,
             "content": content[:3000],
             "status": "pending",
             "source": source,
@@ -949,6 +974,31 @@ class DemoStore:
             )
         except (httpx.HTTPError, RuntimeError, ValueError) as exc:
             return None, "template", str(exc)[:300]
+
+    @staticmethod
+    def _generate_ai_revision(state: dict, post: dict, instructions: str) -> str | None:
+        provider = ClaudeProvider()
+        if not provider.configured:
+            return None
+
+        system_prompt = (
+            "You are Mira, the content operating partner inside Blidx. "
+            "Revise the LinkedIn draft according to the user's instructions. "
+            "Return only the revised post text, with no preamble or markdown fence. "
+            "Keep the user's facts intact, do not invent specifics, and stay under 2,600 characters."
+        )
+        prompt = "\n\n".join(
+            [
+                "USER PROFILE\n" + json.dumps(state.get("profile", {}), indent=2),
+                "CONTENT BANK\n" + json.dumps(state.get("content_bank", [])[:5], indent=2),
+                "CURRENT DRAFT\n" + post.get("content", ""),
+                "REVISION INSTRUCTIONS\n" + instructions.strip(),
+            ]
+        )
+        try:
+            return provider.generate(prompt, system_prompt)
+        except (httpx.HTTPError, RuntimeError, ValueError):
+            return None
 
     @staticmethod
     def _context_package(state: dict, topic: str) -> str:

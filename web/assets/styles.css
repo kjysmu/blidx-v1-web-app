@@ -111,13 +111,13 @@ h1 { margin-top: 7px; font-family: "Playfair Display"; font-size: clamp(30px, 5v
   background: var(--card); border: 1px solid var(--line); border-radius: 18px;
   padding: 20px; box-shadow: 0 4px 20px rgba(30,25,50,.035);
 }
-.tester-card { margin-bottom: 18px; border-color: #cfc8f0; background: linear-gradient(135deg, #fff, #faf9ff); }
+.workflow-card { margin-bottom: 18px; border-color: #cfc8f0; background: linear-gradient(135deg, #fff, #faf9ff); }
 .checklist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin: 12px 0 15px; }
 .check { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: white; color: var(--muted); font-size: 13px; }
 .check span { display: inline-block; width: 20px; color: var(--purple); font-weight: 800; }
 .check.done { color: var(--green); background: var(--green-soft); border-color: #b9dfca; }
 .check.done span { color: var(--green); }
-.tester-actions { display: flex; gap: 9px; flex-wrap: wrap; margin-bottom: 10px; }
+.workflow-actions { display: flex; gap: 9px; flex-wrap: wrap; margin-bottom: 10px; }
 .card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
 .card h3 { font-size: 16px; }
 .metric { font-size: 34px; font-family: "Playfair Display"; font-weight: 700; }
@@ -161,6 +161,12 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   border-radius: 16px; background: white; box-shadow: var(--shadow);
 }
 .composer-box input { border: 0; box-shadow: none; }
+.prompt-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
+.prompt-chip {
+  border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.88);
+  color: var(--muted); padding: 7px 10px; font-size: 12px; font-weight: 700;
+}
+.prompt-chip:hover { color: var(--purple); border-color: #b8afe8; background: var(--purple-soft); }
 .draft-card { background: white; border: 1px solid #dcd7f3; border-radius: 18px; overflow: hidden; box-shadow: var(--shadow); }
 .draft-meta { padding: 13px 18px; display: flex; justify-content: space-between; background: #faf9ff; color: var(--muted); font-size: 12px; }
 .draft-content { padding: 22px; line-height: 1.62; white-space: pre-wrap; }
@@ -176,6 +182,7 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 }
 .list-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; }
 .list-item p { color: var(--muted); margin: 7px 0 0; line-height: 1.5; }
+.inline-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .template-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 14px 0; }
 .template {
   border: 1px solid var(--line); border-radius: 12px; background: white;
@@ -194,6 +201,14 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .day.has-post { border-color: #b8afe8; }
 .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px; background: var(--purple); }
 .dot.published { background: var(--green); }
+.stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.stat-card .metric { margin: 6px 0; }
+.bar-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--muted);
+}
+.bar-row:last-child { border-bottom: 0; }
+.bar-row strong { color: var(--ink); }
 .mobile-nav { display: none; }
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(24,22,34,.4); z-index: 40;
@@ -248,13 +263,14 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .auth-brand { margin-bottom: 28px; }
   .auth-card { border-radius: 18px; }
   .onboarding-actions { display: grid; }
-  .grid, .form-grid { grid-template-columns: 1fr; }
+  .grid, .form-grid, .stats-grid { grid-template-columns: 1fr; }
   .checklist { grid-template-columns: 1fr; }
   .field.full { grid-column: auto; }
   .template-grid { grid-template-columns: repeat(2, 1fr); }
   .composer { left: 0; margin: 0; width: 100%; padding: 14px 14px 82px; }
+  .prompt-row { display: none; }
   .mobile-nav {
-    position: fixed; display: grid; grid-template-columns: repeat(5, 1fr);
+    position: fixed; display: grid; grid-template-columns: repeat(6, 1fr);
     left: 0; right: 0; bottom: 0; height: 68px; z-index: 30;
     background: rgba(255,255,255,.94); border-top: 1px solid var(--line); backdrop-filter: blur(14px);
   }
