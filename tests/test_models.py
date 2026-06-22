@@ -10,6 +10,7 @@ def test_final_v1_tables_are_registered():
         "user_profiles",
         "content_bank",
         "posts",
+        "user_workspaces",
     }
 
 

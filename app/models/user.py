@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from app.models.content_bank import ContentBankEntry
     from app.models.post import Post
     from app.models.user_profile import UserProfile
+    from app.models.user_workspace import UserWorkspace
 
 
 class User(Base):
@@ -36,4 +37,7 @@ class User(Base):
     )
     posts: Mapped[list["Post"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
+    )
+    workspace: Mapped["UserWorkspace | None"] = relationship(
+        back_populates="user", cascade="all, delete-orphan", uselist=False
     )

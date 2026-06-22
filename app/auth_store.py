@@ -5,7 +5,12 @@ from copy import deepcopy
 from datetime import timezone, datetime
 from pathlib import Path
 
+from sqlalchemy.exc import IntegrityError
+
+from app.core.config import settings
+from app.core.database import SessionLocal
 from app.core.security import hash_password, verify_password
+from app.models.user import User
 
 
 def utc_now() -> datetime:
@@ -28,6 +33,9 @@ class AuthStore:
 
     def register(self, email: str, password: str, user_name: str | None = None) -> dict:
         normalized_email = email.strip().lower()
+        if self._database_enabled():
+            return self._register_db(normalized_email, password, user_name)
+
         with self.lock:
             data = self._read()
             if self._find_by_email(data, normalized_email):
@@ -45,6 +53,9 @@ class AuthStore:
 
     def authenticate(self, email: str, password: str) -> dict | None:
         normalized_email = email.strip().lower()
+        if self._database_enabled():
+            return self._authenticate_db(normalized_email, password)
+
         with self.lock:
             user = self._find_by_email(self._read(), normalized_email)
             if not user or not verify_password(password, user["password_hash"]):
@@ -52,9 +63,53 @@ class AuthStore:
             return self._public_user(user)
 
     def get_user(self, user_id: str) -> dict | None:
+        if self._database_enabled():
+            return self._get_user_db(user_id)
+
         with self.lock:
             user = self._find_by_id(self._read(), user_id)
             return self._public_user(user) if user else None
+
+    @staticmethod
+    def _database_enabled() -> bool:
+        return bool(settings.USE_DATABASE_STORAGE)
+
+    def _register_db(
+        self, email: str, password: str, user_name: str | None = None
+    ) -> dict:
+        with SessionLocal() as db:
+            user = User(
+                email=email,
+                user_name=user_name.strip() if user_name else email.split("@")[0],
+                password_hash=hash_password(password),
+            )
+            db.add(user)
+            try:
+                db.commit()
+            except IntegrityError as exc:
+                db.rollback()
+                raise ValueError("Email is already registered") from exc
+            db.refresh(user)
+            return self._public_user_db(user)
+
+    @staticmethod
+    def _authenticate_db(email: str, password: str) -> dict | None:
+        with SessionLocal() as db:
+            user = db.query(User).filter(User.email == email).first()
+            if not user or not verify_password(password, user.password_hash):
+                return None
+            return AuthStore._public_user_db(user)
+
+    @staticmethod
+    def _get_user_db(user_id: str) -> dict | None:
+        try:
+            parsed_user_id = uuid.UUID(user_id)
+        except ValueError:
+            return None
+
+        with SessionLocal() as db:
+            user = db.get(User, parsed_user_id)
+            return AuthStore._public_user_db(user) if user else None
 
     @staticmethod
     def _find_by_email(data: dict, email: str) -> dict | None:
@@ -69,6 +124,15 @@ class AuthStore:
         public = deepcopy(user)
         public.pop("password_hash", None)
         return public
+
+    @staticmethod
+    def _public_user_db(user: User) -> dict:
+        return {
+            "id": str(user.id),
+            "email": user.email,
+            "user_name": user.user_name,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+        }
 
 
 auth_store = AuthStore()

@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -9,10 +10,27 @@ from app.api import admin, auth, chat, demo, generate, integrations, memory, pos
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
+def initialize_database() -> None:
+    if not settings.USE_DATABASE_STORAGE:
+        return
+
+    from app.core.database import Base, engine
+    import app.models  # noqa: F401
+
+    Base.metadata.create_all(bind=engine)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    initialize_database()
+    yield
+
+
 app = FastAPI(
     title=settings.APP_NAME,
     debug=settings.DEBUG,
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 

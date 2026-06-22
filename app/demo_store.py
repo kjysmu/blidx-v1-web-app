@@ -7,7 +7,11 @@ from pathlib import Path
 
 import httpx
 
+from app.core.config import settings
+from app.core.database import SessionLocal
 from app.integrations.llm import ClaudeProvider
+from app.models.user import User
+from app.models.user_workspace import UserWorkspace
 
 
 class CurrentUserContext:
@@ -99,39 +103,103 @@ class DemoStore:
         return self.users_dir / f"{user_id}.json"
 
     def _read(self) -> dict:
+        if self._database_storage_enabled():
+            return self._read_db_state()
+
         path = self._state_path()
         if not path.exists():
             self._write(self._initial_state({"id": current_user_id.get(), "email": "", "user_name": "User"}))
         return self._normalize_state(json.loads(path.read_text()))
 
     def _write(self, state: dict) -> None:
+        if self._database_storage_enabled():
+            self._write_db_state(state)
+            return
+
         self._state_path().write_text(json.dumps(state, indent=2))
 
     def ensure_user_state(self, user: dict) -> dict:
         with self.lock:
             token = current_user_id.set(user["id"])
             try:
+                if settings.USE_DATABASE_STORAGE:
+                    state = self._read()
+                    state["user"] = self._user_block(user)
+                    self._write(state)
+                    return self._public_state(state)
+
                 path = self._state_path()
                 if path.exists():
                     state = self._read()
-                    state["user"] = {
-                        "id": user["id"],
-                        "email": user["email"],
-                        "user_name": user.get("user_name") or user["email"].split("@")[0],
-                    }
+                    state["user"] = self._user_block(user)
                     self._write(state)
                 else:
-                    state = self._initial_state(
-                        {
-                            "id": user["id"],
-                            "email": user["email"],
-                            "user_name": user.get("user_name") or user["email"].split("@")[0],
-                        }
-                    )
+                    state = self._initial_state(self._user_block(user))
                     self._write(state)
                 return self._public_state(state)
             finally:
                 current_user_id.reset(token)
+
+    @staticmethod
+    def _database_storage_enabled() -> bool:
+        return bool(settings.USE_DATABASE_STORAGE and current_user_id.get())
+
+    @staticmethod
+    def _user_block(user: dict) -> dict:
+        return {
+            "id": user["id"],
+            "email": user["email"],
+            "user_name": user.get("user_name") or user["email"].split("@")[0],
+        }
+
+    def _read_db_state(self) -> dict:
+        user_id = current_user_id.get()
+        parsed_user_id = uuid.UUID(user_id)
+        with SessionLocal() as db:
+            workspace = (
+                db.query(UserWorkspace)
+                .filter(UserWorkspace.user_id == parsed_user_id)
+                .first()
+            )
+            if workspace is None:
+                workspace = UserWorkspace(
+                    user_id=parsed_user_id,
+                    state=self._initial_state(self._db_user_block(db, parsed_user_id)),
+                )
+                db.add(workspace)
+                db.commit()
+                db.refresh(workspace)
+            return self._normalize_state(deepcopy(workspace.state))
+
+    def _write_db_state(self, state: dict) -> None:
+        user_id = current_user_id.get()
+        parsed_user_id = uuid.UUID(user_id)
+        with SessionLocal() as db:
+            workspace = (
+                db.query(UserWorkspace)
+                .filter(UserWorkspace.user_id == parsed_user_id)
+                .first()
+            )
+            if workspace is None:
+                workspace = UserWorkspace(
+                    user_id=parsed_user_id,
+                    state=deepcopy(state),
+                )
+                db.add(workspace)
+            else:
+                workspace.state = deepcopy(state)
+            db.commit()
+
+    @staticmethod
+    def _db_user_block(db, user_id: uuid.UUID) -> dict:
+        user = db.get(User, user_id)
+        if not user:
+            return {"id": str(user_id), "email": "", "user_name": "User"}
+        return {
+            "id": str(user.id),
+            "email": user.email,
+            "user_name": user.user_name or user.email.split("@")[0],
+        }
 
     def snapshot(self) -> dict:
         with self.lock:

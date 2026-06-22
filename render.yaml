@@ -19,6 +19,10 @@ services:
         value: production
       - key: DEBUG
         value: "false"
+      - key: USE_DATABASE_STORAGE
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: JWT_ALGORITHM

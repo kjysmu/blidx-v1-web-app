@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/blidx"
+    USE_DATABASE_STORAGE: bool = False
 
     JWT_SECRET_KEY: str = "change_this_secret"
     JWT_ALGORITHM: str = "HS256"
