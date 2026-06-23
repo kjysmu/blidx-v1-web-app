@@ -33,12 +33,14 @@ const escapeHtml = (value = "") =>
 function renderMarkdown(value = "") {
   let html = escapeHtml(String(value)).replace(/\r\n/g, "\n");
   html = html.replace(/`([^`\n]+)`/g, "<code>$1</code>");
-  html = html.replace(/\*\*([^*\n][\s\S]*?[^*\n])\*\*/g, "<strong>$1</strong>");
-  html = html.replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  html = html.replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/(^|[\s(])\*([^*\n]+?)\*/g, "$1<em>$2</em>");
   html = html.replace(
     /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
   );
+  html = html.replace(/\s+---\s+/g, "\n\n");
+  html = html.replace(/\s+(<strong>\d+[.)]\s)/g, "\n\n$1");
   return html
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.trim())
