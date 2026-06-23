@@ -145,6 +145,16 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   max-width: 680px; padding: 14px 16px; border-radius: 16px;
   background: white; border: 1px solid var(--line); line-height: 1.6;
 }
+.markdown p { margin: 0 0 12px; }
+.markdown p:last-child { margin-bottom: 0; }
+.markdown strong { font-weight: 800; }
+.markdown em { font-style: italic; }
+.markdown code {
+  padding: 2px 5px; border-radius: 6px; background: #f3f0fb;
+  color: var(--purple); font-size: .92em;
+}
+.markdown a { color: var(--purple); font-weight: 700; text-decoration: none; }
+.markdown a:hover { text-decoration: underline; }
 .bubble.mira { border-top-left-radius: 5px; }
 .bubble.user {
   justify-self: end; border-top-right-radius: 5px;
@@ -169,7 +179,7 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .prompt-chip:hover { color: var(--purple); border-color: #b8afe8; background: var(--purple-soft); }
 .draft-card { background: white; border: 1px solid #dcd7f3; border-radius: 18px; overflow: hidden; box-shadow: var(--shadow); }
 .draft-meta { padding: 13px 18px; display: flex; justify-content: space-between; background: #faf9ff; color: var(--muted); font-size: 12px; }
-.draft-content { padding: 22px; line-height: 1.62; white-space: pre-wrap; }
+.draft-content { padding: 22px; line-height: 1.62; }
 .draft-actions { padding: 15px 18px; display: flex; gap: 9px; flex-wrap: wrap; border-top: 1px solid var(--line); }
 .badge { display: inline-flex; align-items: center; padding: 5px 9px; border-radius: 99px; font-size: 11px; font-weight: 700; text-transform: capitalize; }
 .badge.pending, .badge.draft { color: var(--purple); background: var(--purple-soft); }

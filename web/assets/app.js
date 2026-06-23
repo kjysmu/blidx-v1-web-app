@@ -30,6 +30,31 @@ const escapeHtml = (value = "") =>
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
   }[char]));
 
+function renderMarkdown(value = "") {
+  let html = escapeHtml(String(value)).replace(/\r\n/g, "\n");
+  html = html.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  html = html.replace(/\*\*([^*\n][\s\S]*?[^*\n])\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  html = html.replace(
+    /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+  );
+  return html
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p>${paragraph.replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
+function stripMarkdown(value = "") {
+  return String(value)
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1");
+}
+
 const navItems = [
   ["chat", "✦", "Chat"],
   ["bank", "▦", "Bank"],
@@ -256,7 +281,7 @@ function quickPrompt(text) {
 function messageBubble(message) {
   const role = message.role === "user" ? "user" : "mira";
   const label = role === "user" ? "You" : "Mira";
-  return `<div class="bubble ${role}"><strong>${label}</strong><br>${escapeHtml(message.content || "")}</div>`;
+  return `<div class="bubble ${role}"><strong>${label}</strong><div class="markdown">${renderMarkdown(message.content || "")}</div></div>`;
 }
 
 function draftCard(post) {
@@ -264,7 +289,7 @@ function draftCard(post) {
   const publishLabel = ui.integrations?.linkedin?.connected ? "Publish to LinkedIn" : "Copy & open LinkedIn";
   return `<article class="draft-card" data-post="${post.id}">
     <div class="draft-meta"><span>Draft v${post.version} · ${post.source.replace("_", " ")} · ${escapeHtml(provider)}</span><span>${post.char_count} / 3,000</span></div>
-    <div class="draft-content">${escapeHtml(post.content)}</div>
+    <div class="draft-content markdown">${renderMarkdown(post.content)}</div>
     <div class="draft-actions">
       <button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>
       <button class="button secondary" data-draft-action="linkedin" data-id="${post.id}">${publishLabel}</button>
@@ -328,8 +353,9 @@ function renderLibrary() {
 }
 
 function libraryItem(post) {
+  const excerpt = stripMarkdown(post.content).slice(0, 220);
   return `<div class="list-item">
-    <div class="list-top"><div><strong>${escapeHtml(post.title)}</strong><p>${escapeHtml(post.content.slice(0, 220))}${post.content.length > 220 ? "…" : ""}</p></div><span class="badge ${post.status}">${post.status}</span></div>
+    <div class="list-top"><div><strong>${escapeHtml(post.title)}</strong><p>${escapeHtml(excerpt)}${post.content.length > 220 ? "…" : ""}</p></div><span class="badge ${post.status}">${post.status}</span></div>
     <div class="small muted" style="margin-top:10px">${post.char_count} characters · v${post.version} · ${escapeHtml(post.generation_provider || "template")}</div>
     <div class="inline-actions">
       ${post.status === "pending" || post.status === "draft" ? `<button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button><button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>` : ""}
