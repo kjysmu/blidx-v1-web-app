@@ -40,6 +40,10 @@ class EditPayload(BaseModel):
     instructions: str = Field(min_length=2)
 
 
+class VariantPayload(BaseModel):
+    variant_id: str = Field(min_length=1)
+
+
 class ApprovePayload(BaseModel):
     schedule_type: str = "best_time"
     scheduled_at: str | None = None
@@ -105,6 +109,14 @@ def edit_draft(draft_id: str, payload: EditPayload) -> dict[str, Any]:
     post = demo_store.edit_post(draft_id, payload.instructions)
     if post is None:
         raise HTTPException(status_code=404, detail="Draft not found")
+    return post
+
+
+@router.post("/drafts/{draft_id}/use-variant")
+def use_draft_variant(draft_id: str, payload: VariantPayload) -> dict[str, Any]:
+    post = demo_store.use_variant(draft_id, payload.variant_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Draft variant not found")
     return post
 
 

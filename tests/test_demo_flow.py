@@ -209,3 +209,58 @@ def test_mira_drafts_from_latest_memory_phrase():
     assert payload["post"]["title"] != "Draft a post from my latest memory"
 
     client.post("/api/reset")
+
+
+def test_draft_includes_variants_and_can_apply_one():
+    client.post("/api/reset")
+    client.post(
+        "/api/content-bank",
+        json={
+            "category": "insights",
+            "raw_text": "A founder told me content gets stuck because the useful context is scattered across calls and notes.",
+        },
+    )
+    draft = client.post(
+        "/api/drafts",
+        json={"topic": "turning scattered founder context into content"},
+    ).json()
+
+    assert len(draft["variants"]) == 3
+    assert {variant["id"] for variant in draft["variants"]} == {
+        "personal_story",
+        "industry_pov",
+        "practical_lesson",
+    }
+
+    response = client.post(
+        f"/api/drafts/{draft['id']}/use-variant",
+        json={"variant_id": "practical_lesson"},
+    )
+
+    assert response.status_code == 200
+    updated = response.json()
+    assert updated["selected_variant_id"] == "practical_lesson"
+    assert updated["version"] == 2
+    assert "1/ Capture the real moment" in updated["content"]
+
+    client.post("/api/reset")
+
+
+def test_quick_cta_edit_has_fallback_behavior():
+    client.post("/api/reset")
+    draft = client.post(
+        "/api/drafts",
+        json={"topic": "why founder content needs workflow ownership"},
+    ).json()
+
+    response = client.post(
+        f"/api/drafts/{draft['id']}/edit",
+        json={"instructions": "Add a clearer CTA"},
+    )
+
+    assert response.status_code == 200
+    updated = response.json()
+    assert updated["version"] == 2
+    assert "What part of this workflow" in updated["content"]
+
+    client.post("/api/reset")

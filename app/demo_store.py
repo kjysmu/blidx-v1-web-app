@@ -352,6 +352,13 @@ class DemoStore:
                         "\n\nThis is the operating lesson I am carrying into "
                         "the next stage of building Blidx."
                     )
+                if "cta" in lowered or "call to action" in lowered:
+                    content += "\n\nWhat part of this workflow feels most broken in your own content process?"
+                if "voice" in lowered:
+                    content += (
+                        "\n\nThe way I would say it simply: the system should carry the workflow, "
+                        "but the founder should keep the judgment."
+                    )
                 if content == post["content"]:
                     content += f"\n\nEdit note applied: {instructions.strip()}"
 
@@ -360,6 +367,41 @@ class DemoStore:
             post["version"] += 1
             post["status"] = "pending"
             post["updated_at"] = utc_now().isoformat()
+            self._write(state)
+            return deepcopy(post)
+
+    def use_variant(self, post_id: str, variant_id: str) -> dict | None:
+        with self.lock:
+            state = self._read()
+            post = self._find_post(state, post_id)
+            if post is None:
+                return None
+
+            variant = next(
+                (
+                    item
+                    for item in post.get("variants", [])
+                    if item.get("id") == variant_id
+                ),
+                None,
+            )
+            if variant is None:
+                return None
+
+            post["content"] = variant["content"][:3000]
+            post["title"] = variant.get("label") or post["title"]
+            post["char_count"] = len(post["content"])
+            post["version"] += 1
+            post["status"] = "pending"
+            post["selected_variant_id"] = variant_id
+            post["updated_at"] = utc_now().isoformat()
+            self._append_message(
+                state,
+                "mira",
+                f"I switched the active draft to the “{variant.get('label', 'selected')}” variant.",
+                kind="draft_updated",
+                post_id=post["id"],
+            )
             self._write(state)
             return deepcopy(post)
 
@@ -904,12 +946,91 @@ class DemoStore:
             "updated_at": now.isoformat(),
             "generation_provider": provider,
             "generation_error": error,
+            "variants": DemoStore._draft_variants(state, topic, content[:3000]),
+            "selected_variant_id": "main",
             "message": (
                 f"{first_name}, I used Claude with your profile and Content Bank context."
                 if provider != "template"
                 else f"{first_name}, I used your profile and freshest context for this angle."
             ),
         }
+
+    @staticmethod
+    def _draft_variants(state: dict, topic: str, main_content: str) -> list[dict]:
+        profile = state["profile"]
+        company = profile.get("company_name") or "my company"
+        audience = ", ".join(profile.get("audience") or ["founders"])
+        memory = state["content_bank"][0]["raw_text"] if state.get("content_bank") else ""
+        hook = DemoStore._variant_theme(topic)
+        context = memory or hook
+        variants = [
+            {
+                "id": "personal_story",
+                "label": "Personal founder story",
+                "positioning": "Lead with the real moment, then turn it into a lesson.",
+                "content": (
+                    f"I had a moment this week that made {hook} feel much less abstract.\n\n"
+                    f"{context}\n\n"
+                    f"At {company}, I keep seeing that the useful insight is rarely sitting in a polished document. "
+                    "It is usually hidden inside the messy middle of building: the call, the decision, the constraint, the thing that almost got missed.\n\n"
+                    "That is why I think founder-led content should start closer to the work.\n\n"
+                    "Not with a blank page.\n"
+                    "Not with a generic prompt.\n"
+                    "But with a real moment that reveals what the founder is learning.\n\n"
+                    f"For {audience}, that is where the point of view becomes believable.\n\n"
+                    "What moment from your work this week would make a stronger post than another broad opinion?"
+                ),
+            },
+            {
+                "id": "industry_pov",
+                "label": "Sharp industry POV",
+                "positioning": "Make the bigger market point first, then support it with context.",
+                "content": (
+                    f"{hook} is not mainly a writing problem.\n\n"
+                    "It is an operating problem.\n\n"
+                    f"Most teams do not lack ideas. They lack a reliable way to turn real work into a clear point of view for {audience}.\n\n"
+                    f"That is the pattern I keep coming back to while building {company}: the best content is already happening inside the business. "
+                    "It is just scattered across notes, calls, product decisions, customer conversations, and founder instincts.\n\n"
+                    "The opportunity is not to make AI write louder.\n\n"
+                    "It is to make the system carry the workflow, while the founder keeps the judgment.\n\n"
+                    "That distinction matters more than most content tools admit."
+                ),
+            },
+            {
+                "id": "practical_lesson",
+                "label": "Practical lesson",
+                "positioning": "Turn the idea into a useful framework readers can apply.",
+                "content": (
+                    f"A practical way to think about {hook}:\n\n"
+                    "1/ Capture the real moment while it is still fresh.\n"
+                    "2/ Ask what changed in your thinking.\n"
+                    "3/ Choose the audience that needs the lesson most.\n"
+                    "4/ Draft from the tension, not from a generic topic.\n"
+                    "5/ Let the founder approve the judgment before anything gets published.\n\n"
+                    f"That is the workflow I want {company} to make feel natural.\n\n"
+                    f"The goal is not more content for {audience}.\n"
+                    "The goal is more signal from the work that is already happening.\n\n"
+                    "What step in that workflow usually breaks first for you?"
+                ),
+            },
+        ]
+        return [
+            {**variant, "char_count": len(variant["content"])}
+            for variant in variants
+            if variant["content"].strip() != main_content.strip()
+        ]
+
+    @staticmethod
+    def _variant_theme(topic: str) -> str:
+        lowered = topic.lower()
+        if "scattered" in lowered and "content" in lowered:
+            return "turning scattered founder context into content"
+        if "human connection" in lowered and "ai" in lowered:
+            return "human connection versus AI"
+        cleaned = topic.strip().rstrip(".")
+        if len(cleaned) > 90:
+            return "turning a real founder moment into a clear point of view"
+        return cleaned or "a founder insight from this week"
 
     @staticmethod
     def _fallback_draft_text(state: dict, topic: str) -> str:

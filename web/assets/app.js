@@ -292,6 +292,7 @@ function draftCard(post) {
   return `<article class="draft-card" data-post="${post.id}">
     <div class="draft-meta"><span>Draft v${post.version} · ${post.source.replace("_", " ")} · ${escapeHtml(provider)}</span><span>${post.char_count} / 3,000</span></div>
     <div class="draft-content markdown">${renderMarkdown(post.content)}</div>
+    ${variantRail(post)}
     <div class="draft-actions">
       <button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>
       <button class="button secondary" data-draft-action="linkedin" data-id="${post.id}">${publishLabel}</button>
@@ -301,6 +302,22 @@ function draftCard(post) {
       <button class="button danger" data-draft-action="delete" data-id="${post.id}">Skip</button>
     </div>
   </article>`;
+}
+
+function variantRail(post) {
+  const variants = post.variants || [];
+  if (!variants.length) return "";
+  return `<div class="variant-rail">
+    <div class="variant-heading"><strong>Try another direction</strong><span>${variants.length} variants</span></div>
+    <div class="variant-grid">
+      ${variants.map((variant) => `<div class="variant-card ${post.selected_variant_id === variant.id ? "active" : ""}">
+        <div class="variant-card-head"><strong>${escapeHtml(variant.label)}</strong><span>${variant.char_count || variant.content.length} chars</span></div>
+        <p>${escapeHtml(variant.positioning || "")}</p>
+        <div class="variant-preview">${escapeHtml(stripMarkdown(variant.content).slice(0, 180))}${variant.content.length > 180 ? "…" : ""}</div>
+        <button class="button secondary" data-draft-action="variant" data-id="${post.id}" data-variant-id="${variant.id}">${post.selected_variant_id === variant.id ? "Using this" : "Use this variant"}</button>
+      </div>`).join("")}
+    </div>
+  </div>`;
 }
 
 function workflowGuide() {
@@ -463,7 +480,7 @@ function bindView() {
     button.onclick = () => { ui.selectedCategory = button.dataset.category; render(); };
   });
   document.querySelectorAll("[data-draft-action]").forEach((button) => {
-    button.onclick = () => handleDraftAction(button.dataset.draftAction, button.dataset.id);
+    button.onclick = () => handleDraftAction(button.dataset.draftAction, button.dataset.id, button.dataset.variantId);
   });
 }
 
@@ -588,7 +605,7 @@ async function saveProfile(event) {
   await refresh(); ui.notice = "Profile updated. Mira will use it on the next draft."; render();
 }
 
-function handleDraftAction(action, id) {
+function handleDraftAction(action, id, variantId = null) {
   if (action === "approve") {
     ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>When should Mira publish?</h3><p class="muted">Use “Copy & open LinkedIn” for the safest live workflow today. Scheduling still keeps Library and Calendar state organized.</p><div class="modal-actions"><button class="button ghost" data-schedule="now">Mark posted</button><button class="button" data-schedule="best_time">Best time</button></div></div></div>`;
     render();
@@ -598,13 +615,26 @@ function handleDraftAction(action, id) {
   } else if (action === "copy") {
     copyDraft(id);
   } else if (action === "edit") {
-    ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>Tell Mira what to change</h3><textarea id="edit-instructions" placeholder="Try: Make it shorter, bolder, or more personal."></textarea><div class="modal-actions"><button class="button ghost" id="cancel-modal">Cancel</button><button class="button" id="submit-edit">Revise draft</button></div></div></div>`;
+    ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>Tell Mira what to change</h3><p class="muted">Use a quick edit or type your own instructions.</p><div class="quick-edit-row">${quickEditButton("Make it shorter")} ${quickEditButton("Make the hook stronger")} ${quickEditButton("Make it more personal")} ${quickEditButton("Add a clearer CTA")} ${quickEditButton("Make it more like my voice")}</div><textarea id="edit-instructions" placeholder="Try: Make it shorter, bolder, or more personal."></textarea><div class="modal-actions"><button class="button ghost" id="cancel-modal">Cancel</button><button class="button" id="submit-edit">Revise draft</button></div></div></div>`;
     render();
     document.querySelector("#cancel-modal").onclick = () => { ui.modal = null; render(); };
     document.querySelector("#submit-edit").onclick = () => editDraft(id);
+    document.querySelectorAll("[data-quick-edit]").forEach((button) => {
+      button.onclick = () => {
+        const textarea = document.querySelector("#edit-instructions");
+        textarea.value = button.dataset.quickEdit;
+        textarea.focus();
+      };
+    });
+  } else if (action === "variant") {
+    useVariant(id, variantId);
   } else {
     api(`/api/drafts/${id}/${action}`, { method: "POST" }).then(() => refresh()).then(() => showToast(action === "save" ? "Saved to Library" : "Draft skipped"));
   }
+}
+
+function quickEditButton(label) {
+  return `<button class="prompt-chip" type="button" data-quick-edit="${escapeHtml(label)}">${escapeHtml(label)}</button>`;
 }
 
 async function copyDraft(id) {
@@ -625,6 +655,16 @@ async function editDraft(id) {
   if (instructions.length < 2) return;
   await api(`/api/drafts/${id}/edit`, { method: "POST", body: JSON.stringify({ instructions }) });
   ui.modal = null; await refresh(); showToast("Mira revised the draft");
+}
+
+async function useVariant(id, variantId) {
+  if (!variantId) return;
+  await api(`/api/drafts/${id}/use-variant`, {
+    method: "POST",
+    body: JSON.stringify({ variant_id: variantId }),
+  });
+  await refresh();
+  showToast("Variant applied");
 }
 
 async function approveDraft(id, schedule_type) {
