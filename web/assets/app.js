@@ -854,10 +854,16 @@ async function copyAndOpenLinkedIn(id) {
 }
 
 function showLinkedInTrackingModal(id) {
-  ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>Did you post it on LinkedIn?</h3><p class="muted">After you paste and publish the draft on LinkedIn, add the post URL here so Blidx can mark it as published. You can also mark it posted without a URL for testing.</p><input class="input" id="linkedin-url" placeholder="https://www.linkedin.com/feed/update/..." /><div class="modal-actions"><button class="button ghost" id="cancel-modal">Not yet</button><button class="button" id="save-linkedin-url">Mark posted</button></div></div></div>`;
+  ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>Did you post it on LinkedIn?</h3><p class="muted">After you paste and publish the draft on LinkedIn, add the post URL here so Blidx can mark it as published. If you have not posted it yet, choose Not yet and the draft will stay available in Blidx.</p><input class="input" id="linkedin-url" placeholder="https://www.linkedin.com/feed/update/..." /><div class="modal-actions"><button class="button ghost" id="linkedin-not-yet">Not yet</button><button class="button" id="save-linkedin-url">Mark posted</button></div></div></div>`;
   render();
-  document.querySelector("#cancel-modal").onclick = () => { ui.modal = null; render(); };
+  document.querySelector("#linkedin-not-yet").onclick = deferLinkedInTracking;
   document.querySelector("#save-linkedin-url").onclick = () => trackLinkedInUrl(id);
+}
+
+function deferLinkedInTracking() {
+  ui.modal = null;
+  render();
+  showToast("No problem. Draft kept in Blidx for later.");
 }
 
 async function trackLinkedInUrl(id) {
