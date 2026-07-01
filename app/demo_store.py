@@ -255,6 +255,40 @@ class DemoStore:
             self._write(state)
         return deepcopy(entry)
 
+    def update_memory(self, memory_id: str, updates: dict) -> dict | None:
+        allowed_freshness = {"fresh", "used", "archived"}
+        allowed_potential = {"low", "medium", "high"}
+        with self.lock:
+            state = self._read()
+            for entry in state.get("content_bank", []):
+                if entry.get("id") != memory_id:
+                    continue
+                if updates.get("raw_text") is not None:
+                    entry["raw_text"] = updates["raw_text"].strip()
+                if updates.get("category") is not None:
+                    category = updates["category"].strip() or self._categorize(entry["raw_text"])
+                    entry["category"] = category
+                    entry["tags"] = [category.title()]
+                if updates.get("freshness") in allowed_freshness:
+                    entry["freshness"] = updates["freshness"]
+                if updates.get("content_potential") in allowed_potential:
+                    entry["content_potential"] = updates["content_potential"]
+                entry["updated_at"] = utc_now().isoformat()
+                self._write(state)
+                return deepcopy(entry)
+        return None
+
+    def delete_memory(self, memory_id: str) -> dict | None:
+        with self.lock:
+            state = self._read()
+            entries = state.get("content_bank", [])
+            for index, entry in enumerate(entries):
+                if entry.get("id") == memory_id:
+                    removed = entries.pop(index)
+                    self._write(state)
+                    return deepcopy(removed)
+        return None
+
     def create_post(self, topic: str, source: str = "user_initiated") -> dict:
         with self.lock:
             state = self._read()

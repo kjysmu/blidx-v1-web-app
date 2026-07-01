@@ -219,6 +219,7 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .badge.scheduled { color: #365f9b; background: var(--blue-soft); }
 .badge.published { color: var(--green); background: var(--green-soft); }
 .badge.deleted { color: var(--danger); background: #fff1f1; }
+.badge-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .list { display: grid; gap: 11px; }
 .list-item {
   padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: white;
@@ -226,6 +227,25 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .list-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; }
 .list-item p { color: var(--muted); margin: 7px 0 0; line-height: 1.5; }
 .inline-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.memory-summary {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px;
+}
+.memory-summary > div {
+  padding: 14px; border: 1px solid var(--line); border-radius: 14px;
+  background: white; box-shadow: 0 4px 20px rgba(30,25,50,.025);
+}
+.memory-summary strong { display: block; font-size: 24px; color: var(--purple); }
+.memory-summary span { color: var(--muted); font-size: 12px; font-weight: 700; }
+.memory-card .button { padding: 9px 12px; font-size: 13px; }
+.memory-edit {
+  margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--line);
+}
+.memory-edit summary {
+  color: var(--purple); font-weight: 800; cursor: pointer; font-size: 13px;
+}
+.memory-edit-form { display: grid; gap: 12px; margin-top: 12px; }
+.form-grid.compact { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: end; }
+.memory-save { align-self: end; }
 .template-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 14px 0; }
 .template {
   border: 1px solid var(--line); border-radius: 12px; background: white;
@@ -311,6 +331,8 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .checklist { grid-template-columns: 1fr; }
   .field.full { grid-column: auto; }
   .template-grid { grid-template-columns: repeat(2, 1fr); }
+  .memory-summary { grid-template-columns: repeat(2, 1fr); }
+  .form-grid.compact { grid-template-columns: 1fr; }
   .variant-grid { grid-template-columns: 1fr; }
   .composer { left: 0; margin: 0; width: 100%; padding: 14px 14px 82px; }
   .prompt-row { display: none; }

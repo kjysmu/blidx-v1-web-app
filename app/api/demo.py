@@ -34,6 +34,13 @@ class MemoryPayload(BaseModel):
     category: str | None = None
 
 
+class MemoryUpdatePayload(BaseModel):
+    raw_text: str | None = Field(default=None, min_length=3)
+    category: str | None = None
+    freshness: str | None = None
+    content_potential: str | None = None
+
+
 class DraftPayload(BaseModel):
     topic: str = Field(min_length=3)
     source: str = "user_initiated"
@@ -93,6 +100,24 @@ def update_profile(payload: ProfilePayload) -> dict[str, Any]:
 @router.post("/content-bank")
 def create_content_bank_entry(payload: MemoryPayload) -> dict[str, Any]:
     return demo_store.add_memory(payload.raw_text, payload.category)
+
+
+@router.put("/content-bank/{memory_id}")
+def update_content_bank_entry(
+    memory_id: str, payload: MemoryUpdatePayload
+) -> dict[str, Any]:
+    entry = demo_store.update_memory(memory_id, payload.model_dump(exclude_none=True))
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Content Bank entry not found")
+    return entry
+
+
+@router.delete("/content-bank/{memory_id}")
+def delete_content_bank_entry(memory_id: str) -> dict[str, Any]:
+    entry = demo_store.delete_memory(memory_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Content Bank entry not found")
+    return {"deleted": True, "entry": entry}
 
 
 @router.post("/onboarding/complete")

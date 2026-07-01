@@ -101,6 +101,15 @@ const navItems = [
   ["settings", "⚙", "Settings"],
 ];
 
+const memoryTemplates = [
+  ["people", "🤝", "Met someone"], ["events", "🎤", "Attended event"],
+  ["insights", "💡", "Key insight"], ["milestones", "🏆", "Hit milestone"],
+  ["reading", "📖", "Read something"], ["solutions", "🔥", "Solved a problem"],
+];
+
+const freshnessOptions = [["fresh", "Fresh"], ["used", "Used"], ["archived", "Archived"]];
+const potentialOptions = [["high", "High"], ["medium", "Medium"], ["low", "Low"]];
+
 function layout(content) {
   if (!ui.auth && !ui.demoMode) {
     app.innerHTML = renderAuth();
@@ -391,24 +400,73 @@ function workflowGuide() {
 }
 
 function renderBank() {
-  const templates = [
-    ["people", "🤝", "Met someone"], ["events", "🎤", "Attended event"],
-    ["insights", "💡", "Key insight"], ["milestones", "🏆", "Hit milestone"],
-    ["reading", "📖", "Read something"], ["solutions", "🔥", "Solved a problem"],
-  ];
   return `<section class="page">
     <div class="eyebrow">Personal memory</div><h1>Content Bank</h1>
-    <p class="lead">Capture one useful moment in under a minute. Mira will use the freshest entries first.</p>
+    <p class="lead">Capture one useful moment in under a minute. Then keep it useful: edit, mark used, raise priority, or turn it into a draft.</p>
     ${ui.notice ? `<div class="notice">${escapeHtml(ui.notice)}</div>` : ""}
+    ${bankSummary()}
     <div class="card">
       <h3>What happened today?</h3>
-      <div class="template-grid">${templates.map(([id, icon, label]) => `<button class="template ${ui.selectedCategory === id ? "active" : ""}" data-category="${id}"><span>${icon}</span>${label}</button>`).join("")}</div>
+      <div class="template-grid">${memoryTemplates.map(([id, icon, label]) => `<button class="template ${ui.selectedCategory === id ? "active" : ""}" data-category="${id}"><span>${icon}</span>${label}</button>`).join("")}</div>
       <form id="bank-form"><textarea id="bank-text" placeholder="Example: We launched our first founder test today. The biggest lesson was that workflow ownership matters more than another writing prompt." required minlength="3"></textarea><button class="button" style="margin-top:10px">Save to Content Bank</button></form>
     </div>
     <div class="list" style="margin-top:18px">
-      ${ui.state.content_bank.length ? ui.state.content_bank.map((entry) => `<div class="list-item"><div class="list-top"><strong>${escapeHtml(entry.category)}</strong><span class="badge published">${entry.freshness}</span></div><p>${escapeHtml(entry.raw_text)}</p><div class="small muted" style="margin-top:8px">Content potential: ${entry.content_potential}</div></div>`).join("") : '<div class="empty">Your Content Bank is empty. Add the first moment above.</div>'}
+      ${ui.state.content_bank.length ? ui.state.content_bank.map(memoryCard).join("") : '<div class="empty">Your Content Bank is empty. Add the first moment above.</div>'}
     </div>
   </section>`;
+}
+
+function bankSummary() {
+  const bank = ui.state.content_bank || [];
+  const fresh = bank.filter((entry) => entry.freshness === "fresh").length;
+  const used = bank.filter((entry) => entry.freshness === "used").length;
+  const high = bank.filter((entry) => entry.content_potential === "high").length;
+  return `<div class="memory-summary">
+    <div><strong>${bank.length}</strong><span>Total entries</span></div>
+    <div><strong>${fresh}</strong><span>Fresh</span></div>
+    <div><strong>${used}</strong><span>Used</span></div>
+    <div><strong>${high}</strong><span>High potential</span></div>
+  </div>`;
+}
+
+function memoryCard(entry) {
+  const category = entry.category || "insights";
+  const freshness = entry.freshness || "fresh";
+  const potential = entry.content_potential || "medium";
+  const freshnessAction = freshness === "used" ? ["fresh", "Mark fresh"] : ["used", "Mark used"];
+  return `<div class="list-item memory-card" data-memory-id="${escapeHtml(entry.id)}">
+    <div class="list-top">
+      <div><strong>${escapeHtml(memoryCategoryLabel(category))}</strong><div class="small muted">${escapeHtml(category)} · ${entry.created_at ? escapeHtml(new Date(entry.created_at).toLocaleDateString()) : "Saved memory"}</div></div>
+      <div class="badge-row"><span class="badge ${freshness === "used" ? "scheduled" : freshness === "archived" ? "deleted" : "published"}">${escapeHtml(freshness)}</span><span class="badge ${potential === "high" ? "published" : "draft"}">${escapeHtml(potential)} potential</span></div>
+    </div>
+    <p>${escapeHtml(entry.raw_text)}</p>
+    <div class="inline-actions">
+      <button class="button secondary" data-prompt="Draft a LinkedIn post from this Content Bank memory: ${escapeHtml(entry.raw_text)}">Draft from this memory</button>
+      <button class="button ghost" data-memory-status="${escapeHtml(freshnessAction[0])}" data-id="${escapeHtml(entry.id)}">${freshnessAction[1]}</button>
+      ${potential === "high" ? "" : `<button class="button ghost" data-memory-potential="high" data-id="${escapeHtml(entry.id)}">Mark high potential</button>`}
+      <button class="button danger" data-memory-delete="${escapeHtml(entry.id)}">Delete</button>
+    </div>
+    <details class="memory-edit">
+      <summary>Edit memory</summary>
+      <form data-memory-edit="${escapeHtml(entry.id)}" class="memory-edit-form">
+        <textarea name="raw_text" required minlength="3">${escapeHtml(entry.raw_text)}</textarea>
+        <div class="form-grid compact">
+          <div class="field"><label>Category</label><select name="category">${selectOptions(memoryTemplates.map(([id, _icon, label]) => [id, label]), category)}</select></div>
+          <div class="field"><label>Status</label><select name="freshness">${selectOptions(freshnessOptions, freshness)}</select></div>
+          <div class="field"><label>Potential</label><select name="content_potential">${selectOptions(potentialOptions, potential)}</select></div>
+          <div class="field memory-save"><button class="button">Save changes</button></div>
+        </div>
+      </form>
+    </details>
+  </div>`;
+}
+
+function memoryCategoryLabel(category) {
+  return memoryTemplates.find(([id]) => id === category)?.[2] || category;
+}
+
+function selectOptions(options, selected) {
+  return options.map(([value, label]) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
 }
 
 function renderLibrary() {
@@ -541,6 +599,18 @@ function bindView() {
   document.querySelectorAll("[data-draft-action]").forEach((button) => {
     button.onclick = () => handleDraftAction(button.dataset.draftAction, button.dataset.id, button.dataset.variantId);
   });
+  document.querySelectorAll("[data-memory-status]").forEach((button) => {
+    button.onclick = () => updateMemory(button.dataset.id, { freshness: button.dataset.memoryStatus });
+  });
+  document.querySelectorAll("[data-memory-potential]").forEach((button) => {
+    button.onclick = () => updateMemory(button.dataset.id, { content_potential: button.dataset.memoryPotential });
+  });
+  document.querySelectorAll("[data-memory-delete]").forEach((button) => {
+    button.onclick = () => deleteMemory(button.dataset.memoryDelete);
+  });
+  document.querySelectorAll("[data-memory-edit]").forEach((form) => {
+    form.onsubmit = saveMemory;
+  });
 }
 
 async function refresh() {
@@ -648,6 +718,36 @@ async function addMemory(event) {
     ui.notice = `Saved to Content Bank · ${entry.category} · Fresh`;
     await refresh();
     ui.notice = `Saved to Content Bank · ${entry.category} · Fresh`; render();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function updateMemory(id, updates) {
+  try {
+    await api(`/api/content-bank/${id}`, { method: "PUT", body: JSON.stringify(updates) });
+    ui.notice = "Content Bank entry updated.";
+    await refresh();
+    ui.notice = "Content Bank entry updated."; render();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function saveMemory(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = Object.fromEntries(new FormData(form).entries());
+  await updateMemory(form.dataset.memoryEdit, payload);
+}
+
+async function deleteMemory(id) {
+  if (!window.confirm("Delete this Content Bank entry?")) return;
+  try {
+    await api(`/api/content-bank/${id}`, { method: "DELETE" });
+    ui.notice = "Content Bank entry deleted.";
+    await refresh();
+    ui.notice = "Content Bank entry deleted."; render();
   } catch (error) {
     showToast(error.message);
   }

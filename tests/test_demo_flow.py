@@ -62,6 +62,46 @@ def test_complete_local_web_app_flow():
     client.post("/api/reset")
 
 
+def test_content_bank_entries_can_be_managed():
+    client.post("/api/reset")
+
+    memory_response = client.post(
+        "/api/content-bank",
+        json={
+            "category": "events",
+            "raw_text": "I spoke with a founder who said content ideas disappear after calls.",
+        },
+    )
+    assert memory_response.status_code == 200
+    memory_id = memory_response.json()["id"]
+
+    update_response = client.put(
+        f"/api/content-bank/{memory_id}",
+        json={
+            "raw_text": "I spoke with a founder who said content ideas disappear after important calls.",
+            "category": "insights",
+            "freshness": "used",
+            "content_potential": "high",
+        },
+    )
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["category"] == "insights"
+    assert updated["freshness"] == "used"
+    assert updated["content_potential"] == "high"
+    assert "updated_at" in updated
+
+    state = client.get("/api/state").json()
+    assert state["content_bank"][0]["raw_text"].endswith("important calls.")
+
+    delete_response = client.delete(f"/api/content-bank/{memory_id}")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["deleted"] is True
+    assert client.get("/api/state").json()["content_bank"] == []
+
+    client.post("/api/reset")
+
+
 def test_seed_test_scenario_makes_app_immediately_testable():
     response = client.post("/api/seed-test-scenario")
 
