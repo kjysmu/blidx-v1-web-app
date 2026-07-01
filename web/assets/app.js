@@ -454,9 +454,14 @@ function renderSettings() {
       ${field("Expertise (comma separated)", "expertise", p.expertise.join(", "), true)}
       <div class="field"><label>Posting frequency</label><select name="posting_frequency"><option value="1-2x_per_week" ${p.posting_frequency === "1-2x_per_week" ? "selected" : ""}>1–2× per week</option><option value="3-4x_per_week" ${p.posting_frequency === "3-4x_per_week" ? "selected" : ""}>3–4× per week</option><option value="5+_per_week" ${p.posting_frequency === "5+_per_week" ? "selected" : ""}>5+ per week</option></select></div>
       ${field("Tone", "tone", p.tone)}
+      ${textAreaField("Writing style notes", "writing_style", p.writing_style || "", "Example: Reflective, direct, specific, no hype. I like numbered points and founder lessons.", true)}
+      ${textAreaField("Writing samples", "writing_samples", (p.writing_samples || []).join("\n\n---\n\n"), "Paste 1-3 LinkedIn posts or writing examples. Separate samples with ---.", true)}
+      ${field("Preferred structure", "preferred_structure", p.preferred_structure || "Hook, context, lesson, reflective question", true)}
+      ${field("Phrases to avoid (comma separated)", "avoided_phrases", (p.avoided_phrases || []).join(", "), true)}
+      ${field("CTA style", "cta_style", p.cta_style || "Reflective question", true)}
       <div class="field full"><button class="button">Save profile</button> <button type="button" class="button ghost" id="reset-demo">Reset workspace data</button></div>
     </form>
-    <div class="card" style="margin-top:16px"><div class="card-head"><h3>AI generation</h3><span class="badge ${anthropic?.configured ? "published" : "draft"}">${anthropic?.configured ? "Claude ready" : "Local fallback"}</span></div><p class="muted">${anthropic?.configured ? `Mira drafts use ${escapeHtml(anthropic.model)} with profile, writing samples, and Content Bank context.` : "Add ANTHROPIC_API_KEY in Render to enable live Claude generation. The local fallback remains testable and avoids the old repeated template."}</p></div>
+    <div class="card" style="margin-top:16px"><div class="card-head"><h3>AI generation</h3><span class="badge ${anthropic?.configured ? "published" : "draft"}">${anthropic?.configured ? "Claude ready" : "Local fallback"}</span></div><p class="muted">${anthropic?.configured ? `Mira drafts use ${escapeHtml(anthropic.model)} with profile, writing samples, voice controls, and Content Bank context.` : "Add ANTHROPIC_API_KEY in Render to enable live Claude generation. The local fallback still uses your CTA style and avoids generic repeated templates."}</p></div>
     <div class="card" style="margin-top:16px"><div class="card-head"><h3>LinkedIn</h3><span class="badge ${linkedinClass}">${linkedinBadge}</span></div><p class="muted">${linkedin?.connected ? "LinkedIn is connected for this staging session. Draft cards can publish directly." : linkedin?.configured ? "OAuth URL generation is available. The redirect URL must exactly match the LinkedIn app settings; otherwise use the manual fallback." : "Use Copy & open LinkedIn on any draft. For full OAuth on staging, add the Render URL to LinkedIn redirect URLs or route app.blidx.com to this service."}</p>${linkedin?.connected ? "" : '<button class="button secondary" id="connect-linkedin">Connect LinkedIn</button>'}</div>
     <div class="card" style="margin-top:16px"><div class="card-head"><h3>PayloadCMS review</h3><span class="badge draft">${escapeHtml(payloadcms?.recommendation || "defer")}</span></div><p class="muted">${escapeHtml(payloadcms?.reason || "PayloadCMS review pending.")}</p></div>
   </section>`;
@@ -464,6 +469,10 @@ function renderSettings() {
 
 function field(label, name, value, full = false) {
   return `<div class="field ${full ? "full" : ""}"><label>${label}</label><input class="input" name="${name}" value="${escapeHtml(value || "")}" /></div>`;
+}
+
+function textAreaField(label, name, value, placeholder = "", full = false) {
+  return `<div class="field ${full ? "full" : ""}"><label>${label}</label><textarea name="${name}" placeholder="${escapeHtml(placeholder)}">${escapeHtml(value || "")}</textarea></div>`;
 }
 
 function bindView() {
@@ -600,6 +609,8 @@ async function saveProfile(event) {
   const payload = Object.fromEntries(form.entries());
   payload.audience = payload.audience.split(",").map((v) => v.trim()).filter(Boolean);
   payload.expertise = payload.expertise.split(",").map((v) => v.trim()).filter(Boolean);
+  payload.avoided_phrases = (payload.avoided_phrases || "").split(",").map((v) => v.trim()).filter(Boolean);
+  payload.writing_samples = (payload.writing_samples || "").split(/\n\s*---\s*\n/).map((v) => v.trim()).filter(Boolean);
   await api("/api/profile", { method: "PUT", body: JSON.stringify(payload) });
   ui.notice = "Profile updated. Mira will use it on the next draft.";
   await refresh(); ui.notice = "Profile updated. Mira will use it on the next draft."; render();

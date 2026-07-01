@@ -19,6 +19,9 @@ class ProfilePayload(BaseModel):
     expertise: list[str] | None = None
     writing_style: str | None = None
     writing_samples: list[str] | None = None
+    preferred_structure: str | None = None
+    avoided_phrases: list[str] | None = None
+    cta_style: str | None = None
     audience: list[str] | None = None
     content_types: list[str] | None = None
     posting_frequency: str | None = None
@@ -70,6 +73,10 @@ class OnboardingPayload(BaseModel):
     posting_frequency: str = "3-4x_per_week"
     tone: str = "Insightful & measured"
     writing_style: str | None = None
+    writing_samples: list[str] = Field(default_factory=list)
+    preferred_structure: str | None = None
+    avoided_phrases: list[str] = Field(default_factory=list)
+    cta_style: str | None = None
     first_memory: str | None = None
 
 

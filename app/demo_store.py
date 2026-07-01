@@ -70,6 +70,9 @@ class DemoStore:
                 "expertise": ["AI / Machine Learning", "Product Strategy"],
                 "writing_style": "",
                 "writing_samples": [],
+                "preferred_structure": "Hook, context, lesson, reflective question",
+                "avoided_phrases": ["game changer", "unlock", "10x"],
+                "cta_style": "Reflective question",
                 "audience": ["Founders", "Industry Peers"],
                 "content_types": ["Industry insights", "Lessons learned"],
                 "posting_frequency": "3-4x_per_week",
@@ -645,6 +648,15 @@ class DemoStore:
     def _normalize_state(state: dict) -> dict:
         state.setdefault("content_bank", [])
         state.setdefault("posts", [])
+        profile = state.setdefault("profile", {})
+        profile.setdefault("writing_style", "")
+        profile.setdefault("writing_samples", [])
+        profile.setdefault(
+            "preferred_structure",
+            "Hook, context, lesson, reflective question",
+        )
+        profile.setdefault("avoided_phrases", ["game changer", "unlock", "10x"])
+        profile.setdefault("cta_style", "Reflective question")
         state.setdefault("onboarding_completed", True if state.get("test_scenario") else False)
         state.setdefault(
             "messages",
@@ -1042,6 +1054,7 @@ class DemoStore:
         memory_text = memory["raw_text"] if memory else ""
         hook = topic.strip().rstrip(".")
         expertise = ", ".join(profile.get("expertise") or [])
+        closing = DemoStore._closing_question(profile)
         if "mental health" in (profile.get("industry") or "").lower():
             return (
                 f"What does {hook} ask from us, beyond the technology?\n\n"
@@ -1054,7 +1067,7 @@ class DemoStore:
                 "3/ But in mental health, the human layer cannot become an afterthought.\n\n"
                 f"For {audience}, I think the question is not whether AI belongs in the future of care. "
                 "It is where it should support the relationship, and where the relationship must stay central.\n\n"
-                "What part of care do you believe should never be automated?"
+                f"{closing}"
             )
 
         personal_block = memory_text or (
@@ -1068,8 +1081,19 @@ class DemoStore:
             "The value is not only speed. It is helping a founder notice what they already learned, sharpen it, "
             f"and share it with {audience} in a way that feels specific.\n\n"
             f"My working principle: use the system for structure, but keep the judgment, context, and point of view human.\n\n"
-            f"Curious how others in {expertise or 'this space'} think about this."
+            f"{closing}"
         )
+
+    @staticmethod
+    def _closing_question(profile: dict) -> str:
+        cta_style = (profile.get("cta_style") or "").lower()
+        if "comment" in cta_style:
+            return "What would you add from your own experience?"
+        if "connect" in cta_style:
+            return "If you are thinking about this too, I would be glad to compare notes."
+        if "question" in cta_style or "reflect" in cta_style:
+            return "What part of this workflow creates the most friction for you right now?"
+        return profile.get("cta_style") or "What part of this workflow creates the most friction for you right now?"
 
     @staticmethod
     def _generate_ai_draft(state: dict, topic: str) -> tuple[str | None, str, str | None]:
@@ -1082,9 +1106,11 @@ class DemoStore:
             "Write only the LinkedIn post draft, with no preamble. "
             "The draft must sound like the user, not like a generic AI assistant. "
             "Use first person when appropriate. Keep it publishable, specific, and under 2,600 characters. "
-            "Blend data, emotional truth, and practical insight. Use rhetorical questions when natural. "
+            "Use the user's writing samples and voice controls as the highest-priority style guide. "
+            "Prefer concrete founder moments over broad claims. Avoid hype, cliches, and any phrases listed as avoided. "
+            "Use the requested structure when possible. Use short paragraphs. "
             "If listing multiple points, use the user's preferred numbered style like 1/, 2/, 3/. "
-            "End with a thoughtful invitation to reflect, connect, or respond. "
+            "End with the user's preferred CTA style. "
             "Do not invent concrete facts, names, statistics, events, or credentials that are not in the context."
         )
         try:
@@ -1126,11 +1152,17 @@ class DemoStore:
         profile = state["profile"]
         memories = state["content_bank"][:8]
         writing_samples = profile.get("writing_samples") or []
+        avoided = profile.get("avoided_phrases") or []
 
         return "\n\n".join(
             [
                 "TASK\n" f"Draft a LinkedIn post about: {topic.strip()}",
                 "USER PROFILE\n" + json.dumps(profile, indent=2),
+                "VOICE CONTROLS\n"
+                f"Preferred structure: {profile.get('preferred_structure') or 'Not specified'}\n"
+                f"CTA style: {profile.get('cta_style') or 'Not specified'}\n"
+                f"Phrases to avoid: {', '.join(avoided) if avoided else 'None specified'}\n"
+                "Use writing samples as the strongest style signal when present.",
                 "LINKEDIN ABOUT / WRITING STYLE\n"
                 + (profile.get("writing_style") or "No writing style provided yet."),
                 "VOICE BENCHMARK\n"
@@ -1165,8 +1197,9 @@ class DemoStore:
             "You are Mira, Blidx's content operating partner. You are a focused chatbot, "
             "not a generic assistant. Help the user clarify LinkedIn angles, Content Bank "
             "entries, draft direction, and publishing workflow. Keep replies warm, concise, "
-            "and practical. If the user asks for a draft, say you can draft it and ask for "
-            "one missing detail only if essential."
+            "and practical. Structure useful replies as: short read of the situation, 2-3 options, "
+            "recommended next move, and one question. If the user asks for a draft, say you can draft it "
+            "and ask for one missing detail only if essential. Avoid hype and respect the user's voice controls."
         )
         messages = state.get("messages", [])[-8:]
         prompt = "\n\n".join(

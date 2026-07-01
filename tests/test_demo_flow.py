@@ -264,3 +264,30 @@ def test_quick_cta_edit_has_fallback_behavior():
     assert "What part of this workflow" in updated["content"]
 
     client.post("/api/reset")
+
+
+def test_profile_voice_controls_are_saved_and_affect_fallback_cta():
+    client.post("/api/reset")
+    profile_response = client.put(
+        "/api/profile",
+        json={
+            "writing_style": "Reflective, concise, and specific.",
+            "writing_samples": ["A sample post with a direct founder lesson."],
+            "preferred_structure": "Hook, real moment, lesson, question",
+            "avoided_phrases": ["game changer", "unlock"],
+            "cta_style": "Invite comments",
+        },
+    )
+
+    assert profile_response.status_code == 200
+    profile = profile_response.json()
+    assert profile["writing_samples"] == ["A sample post with a direct founder lesson."]
+    assert profile["avoided_phrases"] == ["game changer", "unlock"]
+
+    draft = client.post(
+        "/api/drafts",
+        json={"topic": "why founder content needs workflow ownership"},
+    ).json()
+    assert "What would you add from your own experience?" in draft["content"]
+
+    client.post("/api/reset")
