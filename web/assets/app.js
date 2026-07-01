@@ -469,6 +469,24 @@ function selectOptions(options, selected) {
   return options.map(([value, label]) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
 }
 
+function formatPostDate(value) {
+  return value ? new Date(value).toLocaleString() : "No time set";
+}
+
+function scheduleSummary(post) {
+  if (post.status === "published") return post.published_at ? `Posted ${formatPostDate(post.published_at)}` : "Marked as posted";
+  if (post.status === "scheduled") return `${post.schedule_label || "Scheduled"} · ${formatPostDate(post.scheduled_at)}`;
+  return "Not scheduled yet";
+}
+
+function defaultCustomScheduleValue() {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  date.setHours(9, 0, 0, 0);
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 function renderLibrary() {
   const posts = ui.state.posts.filter((post) => post.status !== "deleted");
   return `<section class="page"><div class="eyebrow">Content pipeline</div><h1>Library</h1><p class="lead">Every draft, scheduled post, and published post stays visible here.</p>
@@ -480,7 +498,7 @@ function libraryItem(post) {
   const excerpt = stripMarkdown(post.content).slice(0, 220);
   return `<div class="list-item">
     <div class="list-top"><div><strong>${escapeHtml(post.title)}</strong><p>${escapeHtml(excerpt)}${post.content.length > 220 ? "…" : ""}</p></div><span class="badge ${post.status}">${post.status}</span></div>
-    <div class="small muted" style="margin-top:10px">${post.char_count} characters · v${post.version} · ${escapeHtml(post.generation_provider || "template")}</div>
+    <div class="small muted" style="margin-top:10px">${post.char_count} characters · v${post.version} · ${escapeHtml(post.generation_provider || "template")} · ${escapeHtml(scheduleSummary(post))}</div>
     <div class="inline-actions">
       ${post.status === "pending" || post.status === "draft" ? `<button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button><button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>` : ""}
       <button class="button ghost" data-draft-action="copy" data-id="${post.id}">Copy</button>
@@ -501,11 +519,11 @@ function renderCalendar() {
       const date = new Date(post.scheduled_at || post.published_at);
       return date.getFullYear() === year && date.getMonth() === month && date.getDate() === day;
     });
-    cells.push(`<div class="day ${matches.length ? "has-post" : ""}"><strong>${day}</strong>${matches.map((post) => `<div class="small" style="margin-top:8px"><span class="dot ${post.status}"></span>${post.status}</div>`).join("")}</div>`);
+    cells.push(`<div class="day ${matches.length ? "has-post" : ""}"><strong>${day}</strong>${matches.map((post) => `<div class="small" style="margin-top:8px"><span class="dot ${post.status}"></span>${escapeHtml(post.schedule_label || post.status)}</div>`).join("")}</div>`);
   }
   return `<section class="page"><div class="eyebrow">Schedule</div><h1>${now.toLocaleString("en", { month: "long" })} ${year}</h1><p class="lead">Green marks published content. Purple marks posts Mira has scheduled.</p>
     <div class="card"><div class="calendar">${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((day) => `<div class="day-label">${day}</div>`).join("")}${cells.join("")}</div></div>
-    <div class="list" style="margin-top:18px">${scheduled.length ? scheduled.map((post) => `<div class="list-item"><div class="list-top"><strong>${escapeHtml(post.title)}</strong><span class="badge ${post.status}">${post.status}</span></div><p>${new Date(post.scheduled_at || post.published_at).toLocaleString()}</p></div>`).join("") : '<div class="empty">Nothing scheduled yet. Approve a draft to place it here.</div>'}</div>
+    <div class="list" style="margin-top:18px">${scheduled.length ? scheduled.map((post) => `<div class="list-item"><div class="list-top"><strong>${escapeHtml(post.title)}</strong><span class="badge ${post.status}">${post.status}</span></div><p>${escapeHtml(scheduleSummary(post))}</p></div>`).join("") : '<div class="empty">Nothing scheduled yet. Approve a draft to place it here.</div>'}</div>
   </section>`;
 }
 
@@ -768,9 +786,7 @@ async function saveProfile(event) {
 
 function handleDraftAction(action, id, variantId = null) {
   if (action === "approve") {
-    ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>When should Mira publish?</h3><p class="muted">Use “Copy & open LinkedIn” for the safest live workflow today. Scheduling still keeps Library and Calendar state organized.</p><div class="modal-actions"><button class="button ghost" data-schedule="now">Mark posted</button><button class="button" data-schedule="best_time">Best time</button></div></div></div>`;
-    render();
-    document.querySelectorAll("[data-schedule]").forEach((button) => button.onclick = () => approveDraft(id, button.dataset.schedule));
+    showScheduleModal(id);
   } else if (action === "linkedin") {
     copyAndOpenLinkedIn(id);
   } else if (action === "copy") {
@@ -796,6 +812,39 @@ function handleDraftAction(action, id, variantId = null) {
 
 function quickEditButton(label) {
   return `<button class="prompt-chip" type="button" data-quick-edit="${escapeHtml(label)}">${escapeHtml(label)}</button>`;
+}
+
+function showScheduleModal(id) {
+  ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>When should this post move forward?</h3><p class="muted">Choose a testable scheduling state. For real LinkedIn publishing today, keep using Copy & open LinkedIn.</p>
+    <div class="schedule-options">
+      ${scheduleButton("now", "Post now", "Mark it as published inside Blidx.")}
+      ${scheduleButton("later_today", "Later today", "Schedule for 5:30 PM in the profile timezone.")}
+      ${scheduleButton("tomorrow_morning", "Tomorrow morning", "Schedule for 9:00 AM tomorrow.")}
+      ${scheduleButton("best_time", "Best time this week", "Mira chooses the next Tue/Thu 10:30 AM slot.")}
+    </div>
+    <div class="custom-schedule">
+      <label>Pick date/time</label>
+      <input class="input" id="custom-scheduled-at" type="datetime-local" value="${defaultCustomScheduleValue()}" />
+      <button class="button secondary" id="custom-schedule">Schedule custom time</button>
+    </div>
+    <div class="modal-actions"><button class="button ghost" id="cancel-modal">Cancel</button></div>
+  </div></div>`;
+  render();
+  document.querySelector("#cancel-modal").onclick = () => { ui.modal = null; render(); };
+  document.querySelectorAll("[data-schedule]").forEach((button) => {
+    button.onclick = () => approveDraft(id, button.dataset.schedule);
+  });
+  document.querySelector("#custom-schedule").onclick = () => {
+    const value = document.querySelector("#custom-scheduled-at")?.value;
+    approveDraft(id, "custom", value ? new Date(value).toISOString() : null);
+  };
+}
+
+function scheduleButton(type, title, description) {
+  return `<button class="schedule-option" data-schedule="${type}">
+    <strong>${title}</strong>
+    <span>${description}</span>
+  </button>`;
 }
 
 async function copyDraft(id) {
@@ -828,10 +877,10 @@ async function useVariant(id, variantId) {
   showToast("Variant applied");
 }
 
-async function approveDraft(id, schedule_type) {
-  await api(`/api/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ schedule_type }) });
+async function approveDraft(id, schedule_type, scheduled_at = null) {
+  await api(`/api/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ schedule_type, scheduled_at }) });
   ui.modal = null; await refresh();
-  showToast(schedule_type === "now" ? "Published locally" : "Scheduled for Mira’s recommended time");
+  showToast(schedule_type === "now" ? "Published locally" : "Scheduled and added to Calendar");
 }
 
 async function copyAndOpenLinkedIn(id) {

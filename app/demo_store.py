@@ -4,6 +4,7 @@ import uuid
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
@@ -456,18 +457,83 @@ class DemoStore:
                 post["status"] = "published"
                 post["published_at"] = now.isoformat()
                 post["published_url"] = None
+                post["scheduled_at"] = None
+                post["schedule_type"] = "now"
+                post["schedule_label"] = "Posted now"
             else:
                 post["status"] = "scheduled"
-                if scheduled_at:
-                    post["scheduled_at"] = scheduled_at
-                else:
-                    tomorrow = now + timedelta(days=1)
-                    post["scheduled_at"] = tomorrow.replace(
-                        hour=0, minute=30, second=0, microsecond=0
-                    ).isoformat()
+                schedule = self._resolve_schedule(
+                    state, schedule_type, scheduled_at, now
+                )
+                post["scheduled_at"] = schedule["scheduled_at"]
+                post["schedule_type"] = schedule["schedule_type"]
+                post["schedule_label"] = schedule["schedule_label"]
             post["updated_at"] = now.isoformat()
             self._write(state)
             return deepcopy(post)
+
+    @staticmethod
+    def _resolve_schedule(
+        state: dict, schedule_type: str, scheduled_at: str | None, now: datetime
+    ) -> dict:
+        schedule_type = schedule_type or "best_time"
+        timezone_name = state.get("profile", {}).get("timezone") or "UTC"
+        try:
+            tz = ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            tz = timezone.utc
+        local_now = now.astimezone(tz)
+
+        if scheduled_at:
+            return {
+                "scheduled_at": scheduled_at,
+                "schedule_type": "custom",
+                "schedule_label": "Custom time",
+            }
+
+        if schedule_type == "tomorrow_morning":
+            target = (local_now + timedelta(days=1)).replace(
+                hour=9, minute=0, second=0, microsecond=0
+            )
+            return {
+                "scheduled_at": target.astimezone(timezone.utc).isoformat(),
+                "schedule_type": schedule_type,
+                "schedule_label": "Tomorrow morning",
+            }
+
+        if schedule_type == "later_today":
+            target = local_now.replace(hour=17, minute=30, second=0, microsecond=0)
+            if target <= local_now:
+                target = (local_now + timedelta(days=1)).replace(
+                    hour=9, minute=0, second=0, microsecond=0
+                )
+            return {
+                "scheduled_at": target.astimezone(timezone.utc).isoformat(),
+                "schedule_type": schedule_type,
+                "schedule_label": "Later today",
+            }
+
+        target = DemoStore._next_best_week_slot(local_now)
+        return {
+            "scheduled_at": target.astimezone(timezone.utc).isoformat(),
+            "schedule_type": "best_time",
+            "schedule_label": "Best time this week",
+        }
+
+    @staticmethod
+    def _next_best_week_slot(local_now: datetime) -> datetime:
+        # Tue/Thu mornings are a reasonable MVP default for B2B LinkedIn testing.
+        preferred_weekdays = (1, 3)
+        for days_ahead in range(0, 8):
+            candidate_day = local_now + timedelta(days=days_ahead)
+            if candidate_day.weekday() not in preferred_weekdays:
+                continue
+            candidate = candidate_day.replace(hour=10, minute=30, second=0, microsecond=0)
+            if candidate > local_now:
+                return candidate
+        return (local_now + timedelta(days=1)).replace(
+            hour=10, minute=30, second=0, microsecond=0
+        )
 
     def publish_post(self, post_id: str) -> dict | None:
         with self.lock:

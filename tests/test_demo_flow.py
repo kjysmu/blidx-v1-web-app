@@ -54,10 +54,34 @@ def test_complete_local_web_app_flow():
     assert approve_response.status_code == 200
     assert approve_response.json()["status"] == "scheduled"
     assert approve_response.json()["scheduled_at"] is not None
+    assert approve_response.json()["schedule_label"] == "Best time this week"
 
     state = client.get("/api/state").json()
     assert len(state["content_bank"]) == 1
     assert state["posts"][0]["status"] == "scheduled"
+
+    client.post("/api/reset")
+
+
+def test_draft_can_use_custom_schedule_time():
+    client.post("/api/reset")
+    draft = client.post(
+        "/api/drafts",
+        json={"topic": "custom schedule flow"},
+    ).json()
+    custom_time = "2026-07-03T01:30:00+00:00"
+
+    response = client.post(
+        f"/api/drafts/{draft['id']}/approve",
+        json={"schedule_type": "custom", "scheduled_at": custom_time},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "scheduled"
+    assert payload["scheduled_at"] == custom_time
+    assert payload["schedule_type"] == "custom"
+    assert payload["schedule_label"] == "Custom time"
 
     client.post("/api/reset")
 
