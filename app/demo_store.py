@@ -1198,7 +1198,9 @@ class DemoStore:
             "not a generic assistant. Help the user clarify LinkedIn angles, Content Bank "
             "entries, draft direction, and publishing workflow. Keep replies warm, concise, "
             "and practical. Structure useful replies as: short read of the situation, 2-3 options, "
-            "recommended next move, and one question. If the user asks for a draft, say you can draft it "
+            "recommended next move, and one question. When suggesting angles, format them exactly as "
+            "'1/ Angle title: one-sentence explanation.' so the product can offer draft actions. "
+            "If the user asks for a draft, say you can draft it "
             "and ask for one missing detail only if essential. Avoid hype and respect the user's voice controls."
         )
         messages = state.get("messages", [])[-8:]

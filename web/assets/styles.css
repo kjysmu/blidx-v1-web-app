@@ -161,6 +161,23 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   background: #f5f2ff; border-color: #d7cff5;
 }
 .bubble.typing { color: var(--muted); }
+.angle-actions {
+  display: grid; gap: 8px; margin-top: 14px; padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+.angle-actions-label {
+  color: var(--muted); font-size: 12px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .08em;
+}
+.angle-action {
+  display: grid; gap: 2px; width: 100%; padding: 10px 12px;
+  border: 1px solid #d8d1f4; border-radius: 12px;
+  background: linear-gradient(135deg, #fff, #f8f6ff);
+  color: var(--ink); text-align: left;
+}
+.angle-action span { color: var(--purple); font-size: 12px; font-weight: 800; }
+.angle-action strong { font-size: 14px; }
+.angle-action:hover { border-color: #afa5e8; box-shadow: 0 6px 18px rgba(85,72,184,.1); }
 .composer {
   position: fixed; bottom: 0; margin-left: -34px;
   width: min(calc(100% - 236px), 944px); padding: 16px 34px 22px;

@@ -57,6 +57,41 @@ function stripMarkdown(value = "") {
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1");
 }
 
+function cleanAngleText(value = "") {
+  return stripMarkdown(value)
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractAnglesFromMessage(content = "") {
+  const raw = String(content || "");
+  const angles = [];
+  const pushAngle = (title, detail) => {
+    const cleanTitle = cleanAngleText(title).replace(/^[\s:.-]+|[\s:.-]+$/g, "");
+    const cleanDetail = cleanAngleText(detail).replace(/^[\s:.-]+|[\s:.-]+$/g, "");
+    if (!cleanTitle || cleanTitle.length < 4) return;
+    if (angles.some((angle) => angle.title.toLowerCase() === cleanTitle.toLowerCase())) return;
+    const context = cleanDetail ? `${cleanTitle}: ${cleanDetail}` : cleanTitle;
+    angles.push({
+      title: cleanTitle,
+      detail: cleanDetail,
+      prompt: `Draft a LinkedIn post from this angle: ${context}`,
+    });
+  };
+
+  const numberedPattern = /(?:^|\n)\s*(\d{1,2})\s*[\/.)]\s*([^:\n*]{4,90}):\s*([\s\S]*?)(?=\n\s*\d{1,2}\s*[\/.)]\s*[^:\n*]{4,90}:|\n\s*(?:The strongest|Recommended|Which|Want|Quick|One question)\b|$)/gi;
+  for (const match of raw.matchAll(numberedPattern)) pushAngle(match[2], match[3]);
+
+  if (angles.length < 2) {
+    const boldPattern = /\*\*\s*(\d{1,2})\s*[\/.)]\s*([^*]{4,90}?)\s*\*\*\s*([\s\S]*?)(?=\*\*\s*\d{1,2}\s*[\/.)]|\n\s*(?:The strongest|Recommended|Which|Want|Quick|One question)\b|$)/gi;
+    for (const match of raw.matchAll(boldPattern)) pushAngle(match[2], match[3]);
+  }
+
+  return angles.slice(0, 3);
+}
+
 const navItems = [
   ["chat", "✦", "Chat"],
   ["bank", "▦", "Bank"],
@@ -283,7 +318,19 @@ function quickPrompt(text) {
 function messageBubble(message) {
   const role = message.role === "user" ? "user" : "mira";
   const label = role === "user" ? "You" : "Mira";
-  return `<div class="bubble ${role}"><strong>${label}</strong><div class="markdown">${renderMarkdown(message.content || "")}</div></div>`;
+  return `<div class="bubble ${role}"><strong>${label}</strong><div class="markdown">${renderMarkdown(message.content || "")}</div>${role === "mira" ? angleActions(message.content) : ""}</div>`;
+}
+
+function angleActions(content = "") {
+  const angles = extractAnglesFromMessage(content);
+  if (!angles.length) return "";
+  return `<div class="angle-actions">
+    <div class="angle-actions-label">Turn an angle into a draft</div>
+    ${angles.map((angle, index) => `<button class="angle-action" data-angle-prompt="${escapeHtml(angle.prompt)}">
+      <span>Draft angle ${index + 1}</span>
+      <strong>${escapeHtml(angle.title)}</strong>
+    </button>`).join("")}
+  </div>`;
 }
 
 function draftCard(post) {
@@ -484,6 +531,9 @@ function bindView() {
   document.querySelector("#connect-linkedin")?.addEventListener("click", connectLinkedIn);
   document.querySelectorAll("[data-prompt]").forEach((button) => {
     button.onclick = () => submitPrompt(button.dataset.prompt);
+  });
+  document.querySelectorAll("[data-angle-prompt]").forEach((button) => {
+    button.onclick = () => submitPrompt(button.dataset.anglePrompt);
   });
   document.querySelectorAll("[data-category]").forEach((button) => {
     button.onclick = () => { ui.selectedCategory = button.dataset.category; render(); };
