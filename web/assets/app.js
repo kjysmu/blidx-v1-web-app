@@ -13,6 +13,7 @@ const ui = {
   toast: "",
   loading: false,
   scrollChatAfterRender: false,
+  pendingMessages: [],
 };
 
 const api = async (path, options = {}) => {
@@ -304,10 +305,11 @@ function renderChat() {
   const activeDrafts = ui.state.posts.filter((post) => post.status === "pending");
   const published = ui.state.posts.filter((post) => post.status === "published").length;
   const goal = profile.posting_frequency === "5+_per_week" ? 5 : profile.posting_frequency === "3-4x_per_week" ? 3 : 1;
-  const messages = ui.state.messages?.length ? ui.state.messages : [{
+  const savedMessages = ui.state.messages?.length ? ui.state.messages : [{
     role: "mira",
     content: "Your pipeline is clear. What should we turn into your next post?",
   }];
+  const messages = [...savedMessages, ...ui.pendingMessages];
   return `
     <section class="page">
       <div class="eyebrow">Your content workdesk</div>
@@ -752,15 +754,23 @@ async function sendChatMessage(event) {
 
 async function submitPrompt(message) {
   if (!message) return;
+  ui.pendingMessages = [{
+    id: `pending-${Date.now()}`,
+    role: "user",
+    content: message,
+    kind: "pending",
+  }];
   requestChatScroll();
   ui.loading = true; render();
   try {
     const result = await api("/api/chat/message", { method: "POST", body: JSON.stringify({ message }) });
     ui.state = result.state;
+    ui.pendingMessages = [];
     ui.loading = false;
     requestChatScroll();
     await refresh();
   } catch (error) {
+    ui.pendingMessages = [];
     ui.loading = false;
     showToast(error.message);
   }
