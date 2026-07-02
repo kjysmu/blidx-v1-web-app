@@ -205,6 +205,11 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 }
 .draft-summary strong { color: var(--ink); }
 .draft-summary p { margin: 6px 0 0; color: var(--muted); line-height: 1.45; }
+.read-more {
+  margin-top: 8px; border: 0; background: transparent; color: var(--purple);
+  padding: 0; font-weight: 800; cursor: pointer;
+}
+.read-more:hover { text-decoration: underline; }
 .quality-review {
   margin: 0 18px 18px; padding: 14px; border: 1px solid #d8d1f4;
   border-radius: 14px; background: linear-gradient(135deg, #fff, #faf9ff);

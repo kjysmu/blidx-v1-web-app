@@ -16,6 +16,7 @@ const ui = {
   loading: false,
   scrollChatAfterRender: false,
   pendingMessages: [],
+  expandedDrafts: new Set(),
 };
 
 const api = async (path, options = {}) => {
@@ -445,14 +446,17 @@ function draftCard(post, compact = false) {
   const publishLabel = ui.integrations?.linkedin?.connected ? "Publish to LinkedIn" : "Copy & open LinkedIn";
   const content = post.content || "";
   const excerpt = escapeHtml(stripMarkdown(content).slice(0, 220));
-  return `<article class="draft-card ${compact ? "compact" : ""}" data-post="${post.id}">
+  const isExpanded = compact && ui.expandedDrafts.has(post.id);
+  const displayCompact = compact && !isExpanded;
+  return `<article class="draft-card ${displayCompact ? "compact" : ""}" data-post="${post.id}">
     <div class="draft-meta"><span>Draft v${post.version} · ${post.source.replace("_", " ")} · ${escapeHtml(provider)}</span><span>${post.char_count} / 3,000</span></div>
     ${
-      compact
-        ? `<div class="draft-summary"><div><strong>Active draft: ${escapeHtml(post.title || "Untitled draft")}</strong><p>${excerpt}${content.length > 220 ? "…" : ""}</p></div><span class="badge draft">kept for review</span></div>`
+      displayCompact
+        ? `<div class="draft-summary"><div><strong>Active draft: ${escapeHtml(post.title || "Untitled draft")}</strong><p>${excerpt}${content.length > 220 ? "…" : ""}</p><button class="read-more" data-draft-toggle="${post.id}">Read full draft</button></div><span class="badge draft">kept for review</span></div>`
         : `<div class="draft-content markdown">${renderMarkdown(content)}</div>${qualityReviewPanel(post)}${variantRail(post)}`
     }
     <div class="draft-actions">
+      ${compact ? `<button class="button ghost" data-draft-toggle="${post.id}">${isExpanded ? "Collapse draft" : "Read full draft"}</button>` : ""}
       <button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>
       <button class="button secondary" data-draft-action="linkedin" data-id="${post.id}">${publishLabel}</button>
       <button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button>
@@ -810,6 +814,9 @@ function bindView() {
   document.querySelectorAll("[data-draft-action]").forEach((button) => {
     button.onclick = () => handleDraftAction(button.dataset.draftAction, button.dataset.id, button.dataset.variantId);
   });
+  document.querySelectorAll("[data-draft-toggle]").forEach((button) => {
+    button.onclick = () => toggleDraft(button.dataset.draftToggle);
+  });
   document.querySelectorAll("[data-memory-status]").forEach((button) => {
     button.onclick = () => updateMemory(button.dataset.id, { freshness: button.dataset.memoryStatus });
   });
@@ -822,6 +829,15 @@ function bindView() {
   document.querySelectorAll("[data-memory-edit]").forEach((form) => {
     form.onsubmit = saveMemory;
   });
+}
+
+function toggleDraft(id) {
+  if (ui.expandedDrafts.has(id)) {
+    ui.expandedDrafts.delete(id);
+  } else {
+    ui.expandedDrafts.add(id);
+  }
+  render();
 }
 
 async function refresh() {
