@@ -289,6 +289,16 @@ def test_draft_includes_variants_and_can_apply_one():
         json={"topic": "turning scattered founder context into content"},
     ).json()
 
+    review = draft["quality_review"]
+    assert review["label"].startswith("Draft readiness:")
+    assert review["max_score"] == 5
+    assert {check["id"] for check in review["checks"]} == {
+        "real_moment",
+        "clear_pov",
+        "founder_voice",
+        "good_cta",
+        "linkedin_length",
+    }
     assert len(draft["variants"]) == 3
     assert {variant["id"] for variant in draft["variants"]} == {
         "personal_story",
@@ -306,6 +316,7 @@ def test_draft_includes_variants_and_can_apply_one():
     assert updated["selected_variant_id"] == "practical_lesson"
     assert updated["version"] == 2
     assert "1/ Capture the real moment" in updated["content"]
+    assert updated["quality_review"]["max_score"] == 5
 
     client.post("/api/reset")
 

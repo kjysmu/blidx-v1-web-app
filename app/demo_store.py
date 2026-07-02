@@ -402,6 +402,7 @@ class DemoStore:
 
             post["content"] = content[:3000]
             post["char_count"] = len(post["content"])
+            post["quality_review"] = self._quality_review(state, post)
             post["version"] += 1
             post["status"] = "pending"
             post["updated_at"] = utc_now().isoformat()
@@ -429,6 +430,7 @@ class DemoStore:
             post["content"] = variant["content"][:3000]
             post["title"] = variant.get("label") or post["title"]
             post["char_count"] = len(post["content"])
+            post["quality_review"] = self._quality_review(state, post)
             post["version"] += 1
             post["status"] = "pending"
             post["selected_variant_id"] = variant_id
@@ -1042,7 +1044,7 @@ class DemoStore:
         title = hook[:70].strip()
         if title:
             title = title[0].upper() + title[1:]
-        return {
+        post = {
             "id": str(uuid.uuid4()),
             "title": title,
             "content": content[:3000],
@@ -1065,6 +1067,124 @@ class DemoStore:
                 if provider != "template"
                 else f"{first_name}, I used your profile and freshest context for this angle."
             ),
+        }
+        post["quality_review"] = DemoStore._quality_review(state, post)
+        return post
+
+    @staticmethod
+    def _quality_review(state: dict, post: dict) -> dict:
+        content = post.get("content", "")
+        plain = content.lower()
+        profile = state.get("profile", {})
+        sources = post.get("sources", [])
+        has_question = "?" in content
+        has_numbered_structure = any(marker in content for marker in ("1/", "2/", "3/"))
+        audience_hits = [
+            audience
+            for audience in profile.get("audience", [])
+            if audience and audience.lower() in plain
+        ]
+        memory_text = ""
+        if state.get("content_bank"):
+            memory_text = state["content_bank"][0].get("raw_text", "")
+        memory_terms = [
+            term.strip(".,:;!?").lower()
+            for term in memory_text.split()
+            if len(term.strip(".,:;!?")) > 5
+        ][:8]
+        memory_overlap = sum(1 for term in memory_terms if term in plain)
+
+        checks = [
+            {
+                "id": "real_moment",
+                "label": "Real moment",
+                "passed": bool(sources or memory_overlap >= 2),
+                "detail": (
+                    "Uses a Content Bank memory or specific source."
+                    if sources or memory_overlap >= 2
+                    else "Needs a specific moment from the Content Bank."
+                ),
+            },
+            {
+                "id": "clear_pov",
+                "label": "Clear POV",
+                "passed": any(
+                    phrase in plain
+                    for phrase in (
+                        "i think",
+                        "i believe",
+                        "my working principle",
+                        "the question is",
+                        "that tension matters",
+                        "the opportunity is",
+                    )
+                )
+                or has_numbered_structure,
+                "detail": (
+                    "Has a point of view or useful structure."
+                    if has_numbered_structure
+                    or any(
+                        phrase in plain
+                        for phrase in (
+                            "i think",
+                            "i believe",
+                            "my working principle",
+                            "the question is",
+                            "that tension matters",
+                            "the opportunity is",
+                        )
+                    )
+                    else "Needs a sharper founder opinion."
+                ),
+            },
+            {
+                "id": "founder_voice",
+                "label": "Founder voice",
+                "passed": bool(audience_hits)
+                or any(
+                    phrase in plain
+                    for phrase in ("at ", "building", "founder", "i keep", "i rebuilt", "my")
+                ),
+                "detail": (
+                    "Connects to the founder, company, or intended audience."
+                    if audience_hits
+                    or any(
+                        phrase in plain
+                        for phrase in ("at ", "building", "founder", "i keep", "i rebuilt", "my")
+                    )
+                    else "Could sound more like the founder's own perspective."
+                ),
+            },
+            {
+                "id": "good_cta",
+                "label": "Good CTA",
+                "passed": has_question
+                or any(phrase in plain for phrase in ("comment", "connect", "share")),
+                "detail": (
+                    "Ends with a question or invitation."
+                    if has_question or any(phrase in plain for phrase in ("comment", "connect", "share"))
+                    else "Needs a stronger closing question or invitation."
+                ),
+            },
+            {
+                "id": "linkedin_length",
+                "label": "LinkedIn length",
+                "passed": 300 <= len(content) <= 2200,
+                "detail": (
+                    "Readable LinkedIn length."
+                    if 300 <= len(content) <= 2200
+                    else "Length may be too short or too long for review."
+                ),
+            },
+        ]
+        score = sum(1 for check in checks if check["passed"])
+        needs = [check["label"] for check in checks if not check["passed"]]
+        return {
+            "score": score,
+            "max_score": len(checks),
+            "label": f"Draft readiness: {score}/{len(checks)}",
+            "needs": needs,
+            "checks": checks,
         }
 
     @staticmethod

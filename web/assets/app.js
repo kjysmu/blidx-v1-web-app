@@ -348,6 +348,7 @@ function draftCard(post) {
   return `<article class="draft-card" data-post="${post.id}">
     <div class="draft-meta"><span>Draft v${post.version} · ${post.source.replace("_", " ")} · ${escapeHtml(provider)}</span><span>${post.char_count} / 3,000</span></div>
     <div class="draft-content markdown">${renderMarkdown(post.content)}</div>
+    ${qualityReviewPanel(post)}
     ${variantRail(post)}
     <div class="draft-actions">
       <button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>
@@ -358,6 +359,42 @@ function draftCard(post) {
       <button class="button danger" data-draft-action="delete" data-id="${post.id}">Skip</button>
     </div>
   </article>`;
+}
+
+function qualityReviewPanel(post, compact = false) {
+  const review = post.quality_review || buildClientQualityReview(post);
+  const checks = review.checks || [];
+  const needs = review.needs || checks.filter((check) => !check.passed).map((check) => check.label);
+  return `<div class="quality-review ${compact ? "compact" : ""}">
+    <div class="quality-head">
+      <strong>${escapeHtml(review.label || `Draft readiness: ${review.score || 0}/${review.max_score || checks.length || 5}`)}</strong>
+      <span class="badge ${needs.length ? "draft" : "published"}">${needs.length ? "Needs review" : "Ready"}</span>
+    </div>
+    <div class="quality-checks">
+      ${checks.map((check) => `<div class="quality-check ${check.passed ? "passed" : "missing"}"><span>${check.passed ? "✓" : "○"}</span><strong>${escapeHtml(check.label)}</strong>${compact ? "" : `<small>${escapeHtml(check.detail || "")}</small>`}</div>`).join("")}
+    </div>
+    ${needs.length ? `<div class="quality-needs">Needs improvement: ${escapeHtml(needs.join(", "))}</div>` : `<div class="quality-needs ready">Looks ready for human review.</div>`}
+  </div>`;
+}
+
+function buildClientQualityReview(post) {
+  const content = post.content || "";
+  const plain = stripMarkdown(content).toLowerCase();
+  const checks = [
+    ["Real moment", Boolean((post.sources || []).length), "Uses a Content Bank memory or specific source."],
+    ["Clear POV", /i think|i believe|my working principle|the question is|that tension matters|1\//.test(plain), "Has a point of view or useful structure."],
+    ["Founder voice", /founder|building|at |i keep|my /.test(plain), "Connects to founder perspective."],
+    ["Good CTA", content.includes("?") || /comment|connect|share/.test(plain), "Ends with a question or invitation."],
+    ["LinkedIn length", content.length >= 300 && content.length <= 2200, "Readable LinkedIn length."],
+  ].map(([label, passed, detail], index) => ({ id: `client_${index}`, label, passed, detail }));
+  const score = checks.filter((check) => check.passed).length;
+  return {
+    score,
+    max_score: checks.length,
+    label: `Draft readiness: ${score}/${checks.length}`,
+    needs: checks.filter((check) => !check.passed).map((check) => check.label),
+    checks,
+  };
 }
 
 function variantRail(post) {
@@ -499,6 +536,7 @@ function libraryItem(post) {
   return `<div class="list-item">
     <div class="list-top"><div><strong>${escapeHtml(post.title)}</strong><p>${escapeHtml(excerpt)}${post.content.length > 220 ? "…" : ""}</p></div><span class="badge ${post.status}">${post.status}</span></div>
     <div class="small muted" style="margin-top:10px">${post.char_count} characters · v${post.version} · ${escapeHtml(post.generation_provider || "template")} · ${escapeHtml(scheduleSummary(post))}</div>
+    ${qualityReviewPanel(post, true)}
     <div class="inline-actions">
       ${post.status === "pending" || post.status === "draft" ? `<button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button><button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>` : ""}
       <button class="button ghost" data-draft-action="copy" data-id="${post.id}">Copy</button>
