@@ -8,6 +8,8 @@ const ui = {
   demoMode: localStorage.getItem("blidx_demo") === "true",
   authMode: "login",
   selectedCategory: "insights",
+  libraryFilter: "all",
+  librarySearch: "",
   notice: "",
   modal: null,
   toast: "",
@@ -552,10 +554,55 @@ function defaultCustomScheduleValue() {
 }
 
 function renderLibrary() {
-  const posts = ui.state.posts.filter((post) => post.status !== "deleted");
+  const posts = filteredLibraryPosts();
   return `<section class="page"><div class="eyebrow">Content pipeline</div><h1>Library</h1><p class="lead">Every draft, scheduled post, and published post stays visible here.</p>
-    <div class="list">${posts.length ? posts.map(libraryItem).join("") : '<div class="empty">No posts yet. Draft one with Mira.</div>'}</div>
+    ${libraryControls()}
+    <div class="list">${posts.length ? posts.map(libraryItem).join("") : libraryEmptyState()}</div>
   </section>`;
+}
+
+function libraryControls() {
+  const filters = [
+    ["all", "All"], ["draft", "Drafts"], ["saved", "Saved"], ["scheduled", "Scheduled"],
+    ["published", "Published"], ["skipped", "Skipped"],
+  ];
+  return `<div class="library-tools">
+    <div class="library-filters">
+      ${filters.map(([id, label]) => `<button class="filter-chip ${ui.libraryFilter === id ? "active" : ""}" data-library-filter="${id}">${label}<span>${libraryFilterCount(id)}</span></button>`).join("")}
+    </div>
+    <input class="input library-search" id="library-search" value="${escapeHtml(ui.librarySearch)}" placeholder="Search title or draft text…" />
+  </div>`;
+}
+
+function libraryFilterCount(filter) {
+  return libraryPostsForFilter(filter).length;
+}
+
+function libraryPostsForFilter(filter) {
+  const posts = ui.state.posts || [];
+  if (filter === "all") return posts.filter((post) => post.status !== "deleted");
+  if (filter === "draft") return posts.filter((post) => ["pending", "draft"].includes(post.status));
+  if (filter === "saved") return posts.filter((post) => post.status === "saved");
+  if (filter === "scheduled") return posts.filter((post) => post.status === "scheduled");
+  if (filter === "published") return posts.filter((post) => post.status === "published");
+  if (filter === "skipped") return posts.filter((post) => post.status === "deleted");
+  return posts.filter((post) => post.status !== "deleted");
+}
+
+function filteredLibraryPosts() {
+  const query = ui.librarySearch.trim().toLowerCase();
+  return libraryPostsForFilter(ui.libraryFilter).filter((post) => {
+    if (!query) return true;
+    return [post.title, post.content, post.status, post.schedule_label]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query));
+  });
+}
+
+function libraryEmptyState() {
+  if (ui.librarySearch.trim()) return '<div class="empty">No Library items match that search.</div>';
+  if (ui.libraryFilter !== "all") return '<div class="empty">No posts in this status yet.</div>';
+  return '<div class="empty">No posts yet. Draft one with Mira.</div>';
 }
 
 function libraryItem(post) {
@@ -678,6 +725,14 @@ function bindView() {
   });
   document.querySelectorAll("[data-category]").forEach((button) => {
     button.onclick = () => { ui.selectedCategory = button.dataset.category; render(); };
+  });
+  document.querySelectorAll("[data-library-filter]").forEach((button) => {
+    button.onclick = () => { ui.libraryFilter = button.dataset.libraryFilter; render(); };
+  });
+  document.querySelector("#library-search")?.addEventListener("input", (event) => {
+    ui.librarySearch = event.target.value;
+    render();
+    document.querySelector("#library-search")?.focus();
   });
   document.querySelectorAll("[data-draft-action]").forEach((button) => {
     button.onclick = () => handleDraftAction(button.dataset.draftAction, button.dataset.id, button.dataset.variantId);
