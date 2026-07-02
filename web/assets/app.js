@@ -320,6 +320,7 @@ function renderChat() {
     content: "Your pipeline is clear. What should we turn into your next post?",
   }];
   const messages = [...savedMessages, ...ui.pendingMessages];
+  const timeline = chatTimeline(messages, activeDrafts);
   return `
     <section class="page">
       <div class="eyebrow">Your content workdesk</div>
@@ -331,9 +332,8 @@ function renderChat() {
         <div class="card"><div class="card-head"><h3>Content Bank</h3><span class="badge published">${ui.state.content_bank.length} entries</span></div><p class="muted">Your latest real-world context makes every draft more personal.</p><button class="button secondary" data-tab="bank">Add today’s insight</button></div>
       </div>
       <div class="chat-stream" style="margin-top:18px">
-        ${messages.map(messageBubble).join("")}
+        ${timeline}
         ${ui.loading ? '<div class="bubble mira typing"><strong>Mira</strong><br>Thinking through the angle…</div>' : ""}
-        ${activeDrafts.map(draftCard).join("")}
       </div>
       <div class="composer">
         <form class="composer-box" id="chat-form">
@@ -347,6 +347,27 @@ function renderChat() {
         </div>
       </div>
     </section>`;
+}
+
+function chatTimeline(messages, drafts) {
+  const draftById = new Map(drafts.map((post) => [post.id, post]));
+  const renderedDraftIds = new Set();
+  const items = [];
+
+  messages.forEach((message) => {
+    items.push(messageBubble(message));
+    const draft = message.post_id ? draftById.get(message.post_id) : null;
+    if (draft) {
+      items.push(draftCard(draft));
+      renderedDraftIds.add(draft.id);
+    }
+  });
+
+  drafts.forEach((draft) => {
+    if (!renderedDraftIds.has(draft.id)) items.push(draftCard(draft));
+  });
+
+  return items.join("");
 }
 
 function quickPrompt(text) {
