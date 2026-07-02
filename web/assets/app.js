@@ -354,11 +354,12 @@ function chatTimeline(messages, drafts) {
   const renderedDraftIds = new Set();
   const items = [];
 
-  messages.forEach((message) => {
+  messages.forEach((message, index) => {
     items.push(messageBubble(message));
     const draft = message.post_id ? draftById.get(message.post_id) : null;
     if (draft) {
-      items.push(draftCard(draft));
+      const hasLaterMessages = index < messages.length - 1;
+      items.push(draftCard(draft, hasLaterMessages));
       renderedDraftIds.add(draft.id);
     }
   });
@@ -392,14 +393,18 @@ function angleActions(content = "") {
   </div>`;
 }
 
-function draftCard(post) {
+function draftCard(post, compact = false) {
   const provider = post.generation_provider || "template";
   const publishLabel = ui.integrations?.linkedin?.connected ? "Publish to LinkedIn" : "Copy & open LinkedIn";
-  return `<article class="draft-card" data-post="${post.id}">
+  const content = post.content || "";
+  const excerpt = escapeHtml(stripMarkdown(content).slice(0, 220));
+  return `<article class="draft-card ${compact ? "compact" : ""}" data-post="${post.id}">
     <div class="draft-meta"><span>Draft v${post.version} · ${post.source.replace("_", " ")} · ${escapeHtml(provider)}</span><span>${post.char_count} / 3,000</span></div>
-    <div class="draft-content markdown">${renderMarkdown(post.content)}</div>
-    ${qualityReviewPanel(post)}
-    ${variantRail(post)}
+    ${
+      compact
+        ? `<div class="draft-summary"><div><strong>Active draft: ${escapeHtml(post.title || "Untitled draft")}</strong><p>${excerpt}${content.length > 220 ? "…" : ""}</p></div><span class="badge draft">kept for review</span></div>`
+        : `<div class="draft-content markdown">${renderMarkdown(content)}</div>${qualityReviewPanel(post)}${variantRail(post)}`
+    }
     <div class="draft-actions">
       <button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>
       <button class="button secondary" data-draft-action="linkedin" data-id="${post.id}">${publishLabel}</button>
