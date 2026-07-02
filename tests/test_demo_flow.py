@@ -170,6 +170,29 @@ def test_mira_chat_creates_a_draft_and_records_messages():
     client.post("/api/reset")
 
 
+def test_generic_chat_draft_does_not_force_company_anchor(monkeypatch):
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
+    client.post("/api/reset")
+
+    response = client.post(
+        "/api/chat/message",
+        json={"message": "draft about AI and music"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "draft_created" in payload["actions"]
+    post = payload["post"]
+    assert post["title"] == "AI and music"
+    assert "ai and music" in post["content"].lower()
+    assert "draft about" not in post["content"].lower()
+    assert "At Blidx" not in post["content"]
+    assert "building Blidx" not in post["content"]
+    assert all("At Blidx" not in variant["content"] for variant in post["variants"])
+
+    client.post("/api/reset")
+
+
 def test_mira_redirects_off_topic_chat_without_creating_draft():
     client.post("/api/reset")
 

@@ -943,6 +943,9 @@ class DemoStore:
         lowered = topic.lower()
         prefixes = (
             "draft a post about",
+            "draft about",
+            "draft a linkedin post about",
+            "draft linkedin post about",
             "write a post about",
             "create a post about",
             "make a post about",
@@ -1021,7 +1024,8 @@ class DemoStore:
     @staticmethod
     def _draft(state: dict, topic: str, source: str) -> dict:
         profile = state["profile"]
-        memory = state["content_bank"][0] if state["content_bank"] else None
+        topic = DemoStore._clean_topic(topic)
+        memory = DemoStore._relevant_memory(state, topic)
         first_name = profile.get("first_name") or "there"
         hook = topic.strip().rstrip(".")
         content, provider, error = DemoStore._generate_ai_draft(state, topic)
@@ -1190,20 +1194,37 @@ class DemoStore:
     @staticmethod
     def _draft_variants(state: dict, topic: str, main_content: str) -> list[dict]:
         profile = state["profile"]
+        topic = DemoStore._clean_topic(topic)
+        memory_entry = DemoStore._relevant_memory(state, topic)
+        use_company = DemoStore._should_use_company_anchor(state, topic, memory_entry)
         company = profile.get("company_name") or "my company"
+        company_context = f"At {company}," if use_company else "In founder-led work,"
+        building_context = (
+            f"while building {company}"
+            if use_company
+            else "when turning real work into a point of view"
+        )
+        workflow_sentence = (
+            f"That is the workflow I want {company} to make feel natural."
+            if use_company
+            else "That is the kind of workflow I want to make feel natural."
+        )
         audience = ", ".join(profile.get("audience") or ["founders"])
-        memory = state["content_bank"][0]["raw_text"] if state.get("content_bank") else ""
+        memory = memory_entry["raw_text"] if memory_entry else ""
         hook = DemoStore._variant_theme(topic)
-        context = memory or hook
+        context = (
+            memory
+            or f"I keep noticing this tension around {hook}: speed is useful, but judgment is still the scarce part."
+        )
         variants = [
             {
                 "id": "personal_story",
                 "label": "Personal founder story",
                 "positioning": "Lead with the real moment, then turn it into a lesson.",
                 "content": (
-                    f"I had a moment this week that made {hook} feel much less abstract.\n\n"
+                    f"I keep thinking about {hook}.\n\n"
                     f"{context}\n\n"
-                    f"At {company}, I keep seeing that the useful insight is rarely sitting in a polished document. "
+                    f"{company_context} I keep seeing that the useful insight is rarely sitting in a polished document. "
                     "It is usually hidden inside the messy middle of building: the call, the decision, the constraint, the thing that almost got missed.\n\n"
                     "That is why I think founder-led content should start closer to the work.\n\n"
                     "Not with a blank page.\n"
@@ -1221,7 +1242,7 @@ class DemoStore:
                     f"{hook} is not mainly a writing problem.\n\n"
                     "It is an operating problem.\n\n"
                     f"Most teams do not lack ideas. They lack a reliable way to turn real work into a clear point of view for {audience}.\n\n"
-                    f"That is the pattern I keep coming back to while building {company}: the best content is already happening inside the business. "
+                    f"That is the pattern I keep coming back to {building_context}: the best content is already happening inside the business. "
                     "It is just scattered across notes, calls, product decisions, customer conversations, and founder instincts.\n\n"
                     "The opportunity is not to make AI write louder.\n\n"
                     "It is to make the system carry the workflow, while the founder keeps the judgment.\n\n"
@@ -1239,7 +1260,7 @@ class DemoStore:
                     "3/ Choose the audience that needs the lesson most.\n"
                     "4/ Draft from the tension, not from a generic topic.\n"
                     "5/ Let the founder approve the judgment before anything gets published.\n\n"
-                    f"That is the workflow I want {company} to make feel natural.\n\n"
+                    f"{workflow_sentence}\n\n"
                     f"The goal is not more content for {audience}.\n"
                     "The goal is more signal from the work that is already happening.\n\n"
                     "What step in that workflow usually breaks first for you?"
@@ -1254,6 +1275,7 @@ class DemoStore:
 
     @staticmethod
     def _variant_theme(topic: str) -> str:
+        topic = DemoStore._clean_topic(topic)
         lowered = topic.lower()
         if "scattered" in lowered and "content" in lowered:
             return "turning scattered founder context into content"
@@ -1267,18 +1289,30 @@ class DemoStore:
     @staticmethod
     def _fallback_draft_text(state: dict, topic: str) -> str:
         profile = state["profile"]
-        memories = state["content_bank"][:3]
-        memory = memories[0] if memories else None
+        topic = DemoStore._clean_topic(topic)
+        memory = DemoStore._relevant_memory(state, topic)
+        use_company = DemoStore._should_use_company_anchor(state, topic, memory)
         company = profile.get("company_name") or "my company"
         audience = ", ".join(profile.get("audience") or ["founders"])
         memory_text = memory["raw_text"] if memory else ""
         hook = topic.strip().rstrip(".")
-        expertise = ", ".join(profile.get("expertise") or [])
+        industry = profile.get("industry") or ""
+        topic_terms = DemoStore._topic_terms(topic)
+        industry_terms = DemoStore._topic_terms(industry)
         closing = DemoStore._closing_question(profile)
-        if "mental health" in (profile.get("industry") or "").lower():
+        use_mental_health_frame = (
+            "mental health" in industry.lower()
+            and ("mental health" in topic.lower() or bool(topic_terms & industry_terms))
+        )
+        if use_mental_health_frame:
+            anchor = (
+                f"At {company}, this question keeps coming back to one thing"
+                if use_company
+                else "In mental health, this question keeps coming back to one thing"
+            )
             return (
                 f"What does {hook} ask from us, beyond the technology?\n\n"
-                f"At {company}, this question keeps coming back to one thing: people do not only need access. "
+                f"{anchor}: people do not only need access. "
                 "They need to feel seen, safe, and connected.\n\n"
                 f"A recent moment made this more concrete for me: {memory_text or 'I saw how quickly AI can make hard work feel more possible, and also how easily it can make human care feel abstract.'}\n\n"
                 "That tension matters.\n\n"
@@ -1291,11 +1325,16 @@ class DemoStore:
             )
 
         personal_block = memory_text or (
-            "A recent building moment reminded me that consistent content comes from noticing the work while it is happening."
+            f"The interesting part is not simply that {hook} exists. It is what it changes about taste, judgment, and the way people decide what feels meaningful."
+        )
+        anchor = (
+            f"At {company}, the best content does not start as content. It starts as a real moment from the work."
+            if use_company
+            else "For founders, the best content does not start as a generic topic. It starts with a clear point of view."
         )
         return (
             f"I keep thinking about {hook}.\n\n"
-            f"At {company}, the best content does not start as content. It starts as a real moment from the work.\n\n"
+            f"{anchor}\n\n"
             f"For example: {personal_block}\n\n"
             "That is the part I want to protect as AI becomes more present in how founders communicate.\n\n"
             "The value is not only speed. It is helping a founder notice what they already learned, sharpen it, "
@@ -1303,6 +1342,103 @@ class DemoStore:
             f"My working principle: use the system for structure, but keep the judgment, context, and point of view human.\n\n"
             f"{closing}"
         )
+
+    @staticmethod
+    def _clean_topic(topic: str) -> str:
+        cleaned = topic.strip().strip('"“”').rstrip(".")
+        lowered = cleaned.lower()
+        prefixes = (
+            "draft a post about",
+            "draft about",
+            "draft a linkedin post about",
+            "draft linkedin post about",
+            "write a post about",
+            "create a post about",
+            "make a post about",
+            "linkedin post about",
+            "post about",
+        )
+        for prefix in prefixes:
+            if lowered.startswith(prefix):
+                cleaned = cleaned[len(prefix) :].strip(" :.-")
+                break
+        return cleaned or topic.strip()
+
+    @staticmethod
+    def _topic_terms(text: str) -> set[str]:
+        stopwords = {
+            "about",
+            "draft",
+            "post",
+            "linkedin",
+            "this",
+            "that",
+            "with",
+            "from",
+            "into",
+            "your",
+            "what",
+            "when",
+            "where",
+            "should",
+            "would",
+            "could",
+            "make",
+            "write",
+            "create",
+        }
+        return {
+            word.strip(".,:;!?()[]{}\"'“”‘’").lower()
+            for word in text.split()
+            if len(word.strip(".,:;!?()[]{}\"'“”‘’")) > 2
+            and word.strip(".,:;!?()[]{}\"'“”‘’").lower() not in stopwords
+        }
+
+    @staticmethod
+    def _relevant_memory(state: dict, topic: str) -> dict | None:
+        topic_terms = DemoStore._topic_terms(topic)
+        if not topic_terms:
+            return None
+        best_entry = None
+        best_score = 0
+        for entry in state.get("content_bank", [])[:8]:
+            memory_terms = DemoStore._topic_terms(
+                " ".join(
+                    [
+                        entry.get("raw_text", ""),
+                        entry.get("category", ""),
+                        " ".join(entry.get("tags", [])),
+                    ]
+                )
+            )
+            score = len(topic_terms & memory_terms)
+            if score > best_score:
+                best_score = score
+                best_entry = entry
+        workflow_terms = {"content", "workflow", "founder", "founders", "audience"}
+        if best_score >= 2 or (best_score >= 1 and topic_terms & workflow_terms):
+            return best_entry
+        return None
+
+    @staticmethod
+    def _should_use_company_anchor(state: dict, topic: str, memory: dict | None = None) -> bool:
+        if memory:
+            return True
+        profile = state.get("profile", {})
+        company = (profile.get("company_name") or "").lower()
+        if company and company in topic.lower():
+            return True
+        topic_terms = DemoStore._topic_terms(topic)
+        profile_terms = DemoStore._topic_terms(
+            " ".join(
+                [
+                    profile.get("company_description", ""),
+                    profile.get("industry", ""),
+                    " ".join(profile.get("expertise", [])),
+                ]
+            )
+        )
+        return len(topic_terms & profile_terms) >= 2
 
     @staticmethod
     def _closing_question(profile: dict) -> str:
@@ -1331,6 +1467,10 @@ class DemoStore:
             "Use the requested structure when possible. Use short paragraphs. "
             "If listing multiple points, use the user's preferred numbered style like 1/, 2/, 3/. "
             "End with the user's preferred CTA style. "
+            "Do not repeat command phrases such as 'draft about' in the draft. "
+            "Use Content Bank context only when it is clearly relevant to the requested topic. "
+            "Do not mention Blidx or the user's company unless the user explicitly asks, the topic is about that company, "
+            "or the relevant Content Bank context is about that company. "
             "Do not invent concrete facts, names, statistics, events, or credentials that are not in the context."
         )
         try:
@@ -1370,7 +1510,9 @@ class DemoStore:
     @staticmethod
     def _context_package(state: dict, topic: str) -> str:
         profile = state["profile"]
-        memories = state["content_bank"][:8]
+        topic = DemoStore._clean_topic(topic)
+        memory = DemoStore._relevant_memory(state, topic)
+        memories = [memory] if memory else []
         writing_samples = profile.get("writing_samples") or []
         avoided = profile.get("avoided_phrases") or []
 
