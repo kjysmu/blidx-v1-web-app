@@ -247,6 +247,14 @@ function scrollChatIfRequested() {
     const target = stream?.lastElementChild;
     if (!target) return;
     target.scrollIntoView({ behavior: "smooth", block: "end" });
+    requestAnimationFrame(() => {
+      const composer = document.querySelector(".composer");
+      if (!composer) return;
+      const targetRect = target.getBoundingClientRect();
+      const composerRect = composer.getBoundingClientRect();
+      const overlap = targetRect.bottom - composerRect.top + 28;
+      if (overlap > 0) window.scrollBy({ top: overlap, behavior: "smooth" });
+    });
   });
 }
 

@@ -140,10 +140,11 @@ h1 { margin-top: 7px; font-family: "Playfair Display"; font-size: clamp(30px, 5v
 }
 .input:focus, textarea:focus, select:focus { border-color: #9b91dd; box-shadow: 0 0 0 3px var(--purple-soft); }
 textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
-.chat-stream { display: grid; gap: 16px; margin-bottom: 110px; }
+.chat-stream { display: grid; gap: 16px; margin-bottom: 170px; }
 .bubble {
   max-width: 680px; padding: 14px 16px; border-radius: 16px;
   background: white; border: 1px solid var(--line); line-height: 1.6;
+  scroll-margin-bottom: 190px;
 }
 .markdown p { margin: 0 0 12px; }
 .markdown p:last-child { margin-bottom: 0; }
@@ -194,7 +195,7 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   color: var(--muted); padding: 7px 10px; font-size: 12px; font-weight: 700;
 }
 .prompt-chip:hover { color: var(--purple); border-color: #b8afe8; background: var(--purple-soft); }
-.draft-card { background: white; border: 1px solid #dcd7f3; border-radius: 18px; overflow: hidden; box-shadow: var(--shadow); }
+.draft-card { background: white; border: 1px solid #dcd7f3; border-radius: 18px; overflow: hidden; box-shadow: var(--shadow); scroll-margin-bottom: 190px; }
 .draft-meta { padding: 13px 18px; display: flex; justify-content: space-between; background: #faf9ff; color: var(--muted); font-size: 12px; }
 .draft-content { padding: 22px; line-height: 1.62; }
 .quality-review {
@@ -368,6 +369,8 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .schedule-options, .custom-schedule { grid-template-columns: 1fr; }
   .quality-checks { grid-template-columns: 1fr; }
   .variant-grid { grid-template-columns: 1fr; }
+  .chat-stream { margin-bottom: 210px; }
+  .bubble, .draft-card { scroll-margin-bottom: 230px; }
   .composer { left: 0; margin: 0; width: 100%; padding: 14px 14px 82px; }
   .prompt-row { display: none; }
   .mobile-nav {
