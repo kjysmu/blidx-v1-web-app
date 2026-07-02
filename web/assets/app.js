@@ -12,6 +12,7 @@ const ui = {
   modal: null,
   toast: "",
   loading: false,
+  scrollChatAfterRender: false,
 };
 
 const api = async (path, options = {}) => {
@@ -230,6 +231,22 @@ function render() {
   const views = { chat: renderChat, bank: renderBank, library: renderLibrary, calendar: renderCalendar, analytics: renderAnalytics, settings: renderSettings };
   layout(views[ui.tab]());
   bindView();
+  scrollChatIfRequested();
+}
+
+function requestChatScroll() {
+  ui.scrollChatAfterRender = true;
+}
+
+function scrollChatIfRequested() {
+  if (!ui.scrollChatAfterRender || ui.tab !== "chat") return;
+  ui.scrollChatAfterRender = false;
+  requestAnimationFrame(() => {
+    const stream = document.querySelector(".chat-stream");
+    const target = stream?.lastElementChild;
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "end" });
+  });
 }
 
 function renderOnboarding() {
@@ -735,11 +752,13 @@ async function sendChatMessage(event) {
 
 async function submitPrompt(message) {
   if (!message) return;
+  requestChatScroll();
   ui.loading = true; render();
   try {
     const result = await api("/api/chat/message", { method: "POST", body: JSON.stringify({ message }) });
     ui.state = result.state;
     ui.loading = false;
+    requestChatScroll();
     await refresh();
   } catch (error) {
     ui.loading = false;
@@ -749,6 +768,7 @@ async function submitPrompt(message) {
 
 async function createSampleDraft() {
   ui.tab = "chat";
+  requestChatScroll();
   ui.loading = true; render();
   try {
     const latest = ui.state.content_bank[0]?.raw_text;
@@ -758,6 +778,7 @@ async function createSampleDraft() {
       body: JSON.stringify({ message: `Draft a post about ${topic}` }),
     });
     ui.loading = false;
+    requestChatScroll();
     await refresh();
     showToast("Sample draft generated");
   } catch (error) {
