@@ -352,9 +352,47 @@ function renderChat() {
 function chatTimeline(messages, drafts) {
   const draftById = new Map(drafts.map((post) => [post.id, post]));
   const renderedDraftIds = new Set();
+  const usedDraftMessageIndexes = new Set();
+  const beforeMessage = new Map();
+  const afterMessage = new Map();
+  const trailingDrafts = [];
   const items = [];
 
+  const addDraftToBucket = (bucket, index, draft, compact = true) => {
+    const existing = bucket.get(index) || [];
+    existing.push({ draft, compact });
+    bucket.set(index, existing);
+  };
+
+  drafts.forEach((draft) => {
+    if (messages.some((message) => message.post_id === draft.id)) return;
+    const draftTime = timeValue(draft.created_at);
+    const draftMessageIndex = messages.findIndex((message, index) => (
+      !usedDraftMessageIndexes.has(index)
+      && message.kind === "draft_created"
+      && !message.post_id
+      && Math.abs(timeValue(message.created_at) - draftTime) < 5 * 60 * 1000
+    ));
+    if (draftMessageIndex >= 0) {
+      usedDraftMessageIndexes.add(draftMessageIndex);
+      addDraftToBucket(afterMessage, draftMessageIndex, draft, draftMessageIndex < messages.length - 1);
+      renderedDraftIds.add(draft.id);
+      return;
+    }
+
+    const laterMessageIndex = messages.findIndex((message) => timeValue(message.created_at) > draftTime);
+    if (laterMessageIndex >= 0) {
+      addDraftToBucket(beforeMessage, laterMessageIndex, draft, true);
+    } else {
+      trailingDrafts.push({ draft, compact: false });
+    }
+    renderedDraftIds.add(draft.id);
+  });
+
   messages.forEach((message, index) => {
+    (beforeMessage.get(index) || []).forEach(({ draft, compact }) => {
+      items.push(draftCard(draft, compact));
+    });
     items.push(messageBubble(message));
     const draft = message.post_id ? draftById.get(message.post_id) : null;
     if (draft) {
@@ -362,13 +400,22 @@ function chatTimeline(messages, drafts) {
       items.push(draftCard(draft, hasLaterMessages));
       renderedDraftIds.add(draft.id);
     }
+    (afterMessage.get(index) || []).forEach(({ draft, compact }) => {
+      items.push(draftCard(draft, compact));
+    });
   });
 
-  drafts.forEach((draft) => {
-    if (!renderedDraftIds.has(draft.id)) items.push(draftCard(draft));
+  trailingDrafts.forEach(({ draft, compact }) => {
+    items.push(draftCard(draft, compact));
   });
 
   return items.join("");
+}
+
+function timeValue(value) {
+  if (!value) return Number.POSITIVE_INFINITY;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
 }
 
 function quickPrompt(text) {
