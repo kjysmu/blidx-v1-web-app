@@ -107,3 +107,20 @@ def test_authenticated_user_can_complete_onboarding():
     assert state["profile"]["audience"] == ["Founders", "Clinicians"]
     assert len(state["content_bank"]) == 1
     assert "clinician" in state["content_bank"][0]["raw_text"]
+
+
+def test_authenticated_chat_draft_keeps_session():
+    auth = register_user(name="Chat User")
+    headers = {"Authorization": f"Bearer {auth['access_token']}"}
+
+    response = client.post(
+        "/api/chat/message",
+        headers=headers,
+        json={"message": "write a draft about ai and healthcare"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "draft_created" in payload["actions"]
+    assert payload["state"]["auth"]["authenticated"] is True
+    assert payload["state"]["auth"]["user_id"] == auth["user_id"]

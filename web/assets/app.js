@@ -830,17 +830,30 @@ async function refresh() {
     api("/api/integrations/status").catch(() => null),
   ]);
   if (ui.auth && state.auth && !state.auth.authenticated) {
-    localStorage.removeItem("blidx_auth");
-    ui.auth = null;
-    ui.demoMode = false;
-    localStorage.removeItem("blidx_demo");
-    showToast("Session expired. Please log in again.");
-    render();
-    return;
+    const sessionStillValid = await validateSession();
+    if (!sessionStillValid) {
+      localStorage.removeItem("blidx_auth");
+      ui.auth = null;
+      ui.demoMode = false;
+      localStorage.removeItem("blidx_demo");
+      showToast("Session expired. Please log in again.");
+      render();
+      return;
+    }
+    state.auth = { authenticated: true, user_id: ui.auth.user_id };
   }
   ui.state = state;
   ui.integrations = integrations;
   render();
+}
+
+async function validateSession() {
+  try {
+    await api("/auth/me");
+    return true;
+  } catch (error) {
+    return false;
+  }
 }
 
 async function submitAuth(event) {
