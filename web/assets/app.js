@@ -247,7 +247,11 @@ function scrollChatIfRequested() {
   ui.scrollChatAfterRender = false;
   requestAnimationFrame(() => {
     const stream = document.querySelector(".chat-stream");
-    const target = stream?.lastElementChild;
+    let target = stream?.lastElementChild;
+    if (target?.classList.contains("active-draft-tray")) {
+      const bubbles = stream.querySelectorAll(".bubble");
+      target = bubbles[bubbles.length - 1] || target;
+    }
     if (!target) return;
     target.scrollIntoView({ behavior: "smooth", block: "end" });
     requestAnimationFrame(() => {
