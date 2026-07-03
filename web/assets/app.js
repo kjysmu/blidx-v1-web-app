@@ -326,7 +326,6 @@ function renderChat() {
   }];
   const messages = [...savedMessages, ...ui.pendingMessages];
   const timeline = chatTimeline(messages, activeDrafts);
-  const draftTray = activeDraftTray(messages, activeDrafts);
   return `
     <section class="page">
       <div class="eyebrow">Your content workdesk</div>
@@ -340,7 +339,6 @@ function renderChat() {
       <div class="chat-stream" style="margin-top:18px">
         ${timeline}
         ${ui.loading ? '<div class="bubble mira typing"><strong>Mira</strong><br>Thinking through the angle…</div>' : ""}
-        ${draftTray}
       </div>
       <div class="composer">
         <form class="composer-box" id="chat-form">
@@ -363,6 +361,8 @@ function chatTimeline(messages, drafts) {
   const afterMessage = new Map();
   const trailingDrafts = [];
   const items = [];
+  const draftTray = activeDraftTray(messages, drafts);
+  const trayBeforeIndex = draftTray && messages.length ? messages.length - 1 : -1;
 
   const addDraftToBucket = (bucket, index, draft, compact = true) => {
     const existing = bucket.get(index) || [];
@@ -397,6 +397,7 @@ function chatTimeline(messages, drafts) {
   });
 
   messages.forEach((message, index) => {
+    if (index === trayBeforeIndex) items.push(draftTray);
     items.push(messageBubble(message));
     const draft = message.post_id ? draftById.get(message.post_id) : null;
     if (draft) {
