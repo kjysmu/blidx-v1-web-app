@@ -247,11 +247,7 @@ function scrollChatIfRequested() {
   ui.scrollChatAfterRender = false;
   requestAnimationFrame(() => {
     const stream = document.querySelector(".chat-stream");
-    let target = stream?.lastElementChild;
-    if (target?.classList.contains("active-draft-tray")) {
-      const bubbles = stream.querySelectorAll(".bubble");
-      target = bubbles[bubbles.length - 1] || target;
-    }
+    const target = stream?.lastElementChild;
     if (!target) return;
     target.scrollIntoView({ behavior: "smooth", block: "end" });
     requestAnimationFrame(() => {
@@ -355,14 +351,12 @@ function renderChat() {
 }
 
 function chatTimeline(messages, drafts) {
-  const draftById = new Map(drafts.map((post) => [post.id, post]));
   const renderedDraftIds = new Set();
   const usedDraftMessageIndexes = new Set();
+  const beforeMessage = new Map();
   const afterMessage = new Map();
   const trailingDrafts = [];
   const items = [];
-  const draftTray = activeDraftTray(messages, drafts);
-  const trayBeforeIndex = draftTray && messages.length ? messages.length - 1 : -1;
 
   const addDraftToBucket = (bucket, index, draft, compact = true) => {
     const existing = bucket.get(index) || [];
@@ -371,7 +365,13 @@ function chatTimeline(messages, drafts) {
   };
 
   drafts.forEach((draft) => {
-    if (messages.some((message) => message.post_id === draft.id)) return;
+    const linkedMessageIndex = messages.findIndex((message) => message.post_id === draft.id);
+    if (linkedMessageIndex >= 0) {
+      addDraftToBucket(afterMessage, linkedMessageIndex, draft, linkedMessageIndex < messages.length - 1);
+      renderedDraftIds.add(draft.id);
+      return;
+    }
+
     const draftTime = timeValue(draft.created_at);
     const draftMessageIndex = messages.findIndex((message, index) => (
       !usedDraftMessageIndexes.has(index)
@@ -381,30 +381,25 @@ function chatTimeline(messages, drafts) {
     ));
     if (draftMessageIndex >= 0) {
       usedDraftMessageIndexes.add(draftMessageIndex);
-      if (!draftHasLaterMessages(draft, messages)) {
-        addDraftToBucket(afterMessage, draftMessageIndex, draft, false);
-      }
+      addDraftToBucket(afterMessage, draftMessageIndex, draft, draftMessageIndex < messages.length - 1);
       renderedDraftIds.add(draft.id);
       return;
     }
 
-    if (draftHasLaterMessages(draft, messages)) {
-      renderedDraftIds.add(draft.id);
+    const laterMessageIndex = messages.findIndex((message) => timeValue(message.created_at) > draftTime);
+    if (laterMessageIndex >= 0) {
+      addDraftToBucket(beforeMessage, laterMessageIndex, draft, true);
     } else {
       trailingDrafts.push({ draft, compact: false });
-      renderedDraftIds.add(draft.id);
     }
+    renderedDraftIds.add(draft.id);
   });
 
   messages.forEach((message, index) => {
-    if (index === trayBeforeIndex) items.push(draftTray);
+    (beforeMessage.get(index) || []).forEach(({ draft, compact }) => {
+      items.push(draftCard(draft, compact));
+    });
     items.push(messageBubble(message));
-    const draft = message.post_id ? draftById.get(message.post_id) : null;
-    if (draft) {
-      const hasLaterMessages = index < messages.length - 1;
-      if (!hasLaterMessages) items.push(draftCard(draft));
-      renderedDraftIds.add(draft.id);
-    }
     (afterMessage.get(index) || []).forEach(({ draft, compact }) => {
       items.push(draftCard(draft, compact));
     });
@@ -415,30 +410,6 @@ function chatTimeline(messages, drafts) {
   });
 
   return items.join("");
-}
-
-function activeDraftTray(messages, drafts) {
-  const activeDrafts = drafts.filter((draft) => draftHasLaterMessages(draft, messages));
-  if (!activeDrafts.length) return "";
-  return `<div class="active-draft-tray">
-    <div class="active-draft-head"><strong>Active draft${activeDrafts.length > 1 ? "s" : ""}</strong><span>Kept here while you continue chatting</span></div>
-    ${activeDrafts.map((draft) => draftCard(draft, true)).join("")}
-  </div>`;
-}
-
-function draftHasLaterMessages(draft, messages) {
-  const draftTime = timeValue(draft.created_at);
-  return messages.some((message) => {
-    if (message.post_id === draft.id) return false;
-    const messageTime = timeValue(message.created_at);
-    const isMatchingOrphanDraftReply = (
-      message.kind === "draft_created"
-      && !message.post_id
-      && Math.abs(messageTime - draftTime) < 5 * 60 * 1000
-    );
-    if (isMatchingOrphanDraftReply) return false;
-    return messageTime > draftTime;
-  });
 }
 
 function timeValue(value) {
