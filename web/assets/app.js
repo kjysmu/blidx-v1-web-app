@@ -16,7 +16,7 @@ const ui = {
   loading: false,
   scrollChatAfterRender: false,
   pendingMessages: [],
-  expandedDrafts: new Set(),
+  reviewDraftId: null,
 };
 
 const api = async (path, options = {}) => {
@@ -147,6 +147,7 @@ function layout(content) {
       </main>
     </div>
     <nav class="mobile-nav">${mobileNav}</nav>
+    ${draftReviewModal()}
     ${ui.modal || ""}
     ${ui.toast ? `<div class="toast">${escapeHtml(ui.toast)}</div>` : ""}
   `;
@@ -341,6 +342,7 @@ function renderChat() {
           <input class="input" id="chat-message" placeholder="Message Mira… try: Draft a post about human connection versus AI in mental health" required minlength="2" />
           <button class="button" ${ui.loading ? "disabled" : ""}>${ui.loading ? "Working…" : "Send"}</button>
         </form>
+        ${currentDraftShortcut(activeDrafts)}
         <div class="prompt-row">
           ${quickPrompt("What should I post about today?")}
           ${quickPrompt("Give me 3 angles from my Content Bank")}
@@ -348,6 +350,15 @@ function renderChat() {
         </div>
       </div>
     </section>`;
+}
+
+function currentDraftShortcut(activeDrafts) {
+  if (!activeDrafts.length) return "";
+  const latest = activeDrafts[0];
+  return `<div class="current-draft-shortcut">
+    <span>Current draft: <strong>${escapeHtml(latest.title || "Untitled draft")}</strong></span>
+    <button class="read-more" data-draft-review="${latest.id}">Review draft</button>
+  </div>`;
 }
 
 function chatTimeline(messages, drafts) {
@@ -440,22 +451,16 @@ function angleActions(content = "") {
   </div>`;
 }
 
-function draftCard(post, compact = false) {
+function draftCard(post, compact = true) {
   const provider = post.generation_provider || "template";
   const publishLabel = ui.integrations?.linkedin?.connected ? "Publish to LinkedIn" : "Copy & open LinkedIn";
   const content = post.content || "";
   const excerpt = escapeHtml(stripMarkdown(content).slice(0, 220));
-  const isExpanded = compact && ui.expandedDrafts.has(post.id);
-  const displayCompact = compact && !isExpanded;
-  return `<article class="draft-card ${displayCompact ? "compact" : ""}" data-post="${post.id}">
+  return `<article class="draft-card compact" data-post="${post.id}">
     <div class="draft-meta"><span>Draft v${post.version} · ${post.source.replace("_", " ")} · ${escapeHtml(provider)}</span><span>${post.char_count} / 3,000</span></div>
-    ${
-      displayCompact
-        ? `<div class="draft-summary"><div><strong>Active draft: ${escapeHtml(post.title || "Untitled draft")}</strong><p>${excerpt}${content.length > 220 ? "…" : ""}</p><button class="read-more" data-draft-toggle="${post.id}">Read full draft</button></div><span class="badge draft">kept for review</span></div>`
-        : `<div class="draft-content markdown">${renderMarkdown(content)}</div>${qualityReviewPanel(post)}${variantRail(post)}`
-    }
+    <div class="draft-summary"><div><strong>Draft ready: ${escapeHtml(post.title || "Untitled draft")}</strong><p>${excerpt}${content.length > 220 ? "…" : ""}</p><button class="read-more" data-draft-review="${post.id}">Open draft workspace</button></div><span class="badge draft">pending review</span></div>
     <div class="draft-actions">
-      ${compact ? `<button class="button ghost" data-draft-toggle="${post.id}">${isExpanded ? "Collapse draft" : "Read full draft"}</button>` : ""}
+      <button class="button" data-draft-review="${post.id}">Review draft</button>
       <button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>
       <button class="button secondary" data-draft-action="linkedin" data-id="${post.id}">${publishLabel}</button>
       <button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button>
@@ -464,6 +469,39 @@ function draftCard(post, compact = false) {
       <button class="button danger" data-draft-action="delete" data-id="${post.id}">Skip</button>
     </div>
   </article>`;
+}
+
+function draftReviewModal() {
+  if (!ui.reviewDraftId || !ui.state) return "";
+  const post = ui.state.posts.find((item) => item.id === ui.reviewDraftId);
+  if (!post) return "";
+  const provider = post.generation_provider || "template";
+  const publishLabel = ui.integrations?.linkedin?.connected ? "Publish to LinkedIn" : "Copy & open LinkedIn";
+  return `<div class="modal-backdrop draft-review-backdrop">
+    <div class="modal draft-review-modal">
+      <div class="draft-review-header">
+        <div>
+          <div class="eyebrow">Draft workspace</div>
+          <h3>${escapeHtml(post.title || "Untitled draft")}</h3>
+          <p class="muted small">Draft v${post.version} · ${escapeHtml(post.source?.replace("_", " ") || "chat")} · ${escapeHtml(provider)} · ${post.char_count} / 3,000</p>
+        </div>
+        <button class="icon-button" id="close-draft-review">Close</button>
+      </div>
+      <div class="draft-review-body">
+        <div class="draft-content markdown">${renderMarkdown(post.content || "")}</div>
+        ${qualityReviewPanel(post)}
+        ${variantRail(post)}
+      </div>
+      <div class="draft-actions draft-review-actions">
+        <button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>
+        <button class="button secondary" data-draft-action="linkedin" data-id="${post.id}">${publishLabel}</button>
+        <button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button>
+        <button class="button ghost" data-draft-action="copy" data-id="${post.id}">Copy</button>
+        <button class="button ghost" data-draft-action="save" data-id="${post.id}">Save draft</button>
+        <button class="button danger" data-draft-action="delete" data-id="${post.id}">Skip</button>
+      </div>
+    </div>
+  </div>`;
 }
 
 function qualityReviewPanel(post, compact = false) {
@@ -813,8 +851,12 @@ function bindView() {
   document.querySelectorAll("[data-draft-action]").forEach((button) => {
     button.onclick = () => handleDraftAction(button.dataset.draftAction, button.dataset.id, button.dataset.variantId);
   });
-  document.querySelectorAll("[data-draft-toggle]").forEach((button) => {
-    button.onclick = () => toggleDraft(button.dataset.draftToggle);
+  document.querySelectorAll("[data-draft-review]").forEach((button) => {
+    button.onclick = () => reviewDraft(button.dataset.draftReview);
+  });
+  document.querySelector("#close-draft-review")?.addEventListener("click", () => {
+    ui.reviewDraftId = null;
+    render();
   });
   document.querySelectorAll("[data-memory-status]").forEach((button) => {
     button.onclick = () => updateMemory(button.dataset.id, { freshness: button.dataset.memoryStatus });
@@ -830,12 +872,8 @@ function bindView() {
   });
 }
 
-function toggleDraft(id) {
-  if (ui.expandedDrafts.has(id)) {
-    ui.expandedDrafts.delete(id);
-  } else {
-    ui.expandedDrafts.add(id);
-  }
+function reviewDraft(id) {
+  ui.reviewDraftId = id;
   render();
 }
 
@@ -1039,7 +1077,9 @@ function handleDraftAction(action, id, variantId = null) {
   } else if (action === "variant") {
     useVariant(id, variantId);
   } else {
-    api(`/api/drafts/${id}/${action}`, { method: "POST" }).then(() => refresh()).then(() => showToast(action === "save" ? "Saved to Library" : "Draft skipped"));
+    api(`/api/drafts/${id}/${action}`, { method: "POST" })
+      .then(() => { ui.reviewDraftId = null; return refresh(); })
+      .then(() => showToast(action === "save" ? "Saved to Library" : "Draft skipped"));
   }
 }
 
@@ -1112,7 +1152,9 @@ async function useVariant(id, variantId) {
 
 async function approveDraft(id, schedule_type, scheduled_at = null) {
   await api(`/api/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ schedule_type, scheduled_at }) });
-  ui.modal = null; await refresh();
+  ui.modal = null;
+  ui.reviewDraftId = null;
+  await refresh();
   showToast(schedule_type === "now" ? "Published locally" : "Scheduled and added to Calendar");
 }
 
