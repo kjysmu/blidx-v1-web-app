@@ -312,6 +312,7 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .field label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 7px; }
 .field.full { grid-column: 1 / -1; }
 .notice { padding: 13px 15px; border-radius: 12px; background: var(--green-soft); color: var(--green); margin-bottom: 16px; }
+.notice.error { background: #fff1f1; color: var(--danger); }
 .empty { padding: 60px 20px; text-align: center; color: var(--muted); }
 .schedule-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 16px 0; }
 .schedule-option {
@@ -396,6 +397,33 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .onboarding-page { max-width: 980px; }
 .onboarding-form { margin-top: 22px; }
 .onboarding-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.onboarding-steps {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;
+  margin: 18px 0 6px;
+}
+.onboarding-steps div {
+  display: flex; gap: 9px; align-items: center; padding: 12px;
+  border: 1px solid #d8d1f4; border-radius: 14px; background: rgba(255,255,255,.78);
+}
+.onboarding-steps strong {
+  width: 26px; height: 26px; border-radius: 999px; display: grid; place-items: center;
+  background: var(--purple-soft); color: var(--purple); font-size: 12px;
+}
+.onboarding-steps span { color: var(--muted); font-size: 12px; font-weight: 800; line-height: 1.25; }
+.field-help { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.library-full-draft {
+  margin-top: 14px; padding: 18px; border: 1px solid #d8d1f4;
+  border-radius: 14px; background: #faf9ff; color: var(--ink);
+}
+.readiness-card { margin-bottom: 16px; border-color: #d8d1f4; background: linear-gradient(135deg, #fff, #faf9ff); }
+.readiness-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.readiness-item {
+  display: grid; gap: 4px; padding: 11px 12px; border: 1px solid var(--line);
+  border-radius: 12px; background: white;
+}
+.readiness-item strong { font-size: 13px; }
+.readiness-item span { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.readiness-item.done { border-color: #b9dfca; background: var(--green-soft); }
 
 @media (max-width: 760px) {
   .shell { display: block; padding-bottom: 72px; }
@@ -409,7 +437,10 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .auth-hero { padding: 10px 2px 18px; }
   .auth-brand { margin-bottom: 28px; }
   .auth-card { border-radius: 18px; }
+  .auth-points { margin-top: 18px; }
+  .auth-points div { padding: 12px; }
   .onboarding-actions { display: grid; }
+  .onboarding-steps { grid-template-columns: 1fr; }
   .grid, .form-grid, .stats-grid { grid-template-columns: 1fr; }
   .checklist { grid-template-columns: 1fr; }
   .field.full { grid-column: auto; }
@@ -419,10 +450,24 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .schedule-options, .custom-schedule { grid-template-columns: 1fr; }
   .quality-checks { grid-template-columns: 1fr; }
   .library-tools { grid-template-columns: 1fr; }
+  .readiness-grid { grid-template-columns: 1fr; }
   .variant-grid { grid-template-columns: 1fr; }
   .chat-stream { margin-bottom: 210px; }
   .bubble, .draft-card { scroll-margin-bottom: 230px; }
+  .bubble { max-width: 100%; }
   .composer { left: 0; margin: 0; width: 100%; padding: 14px 14px 82px; }
+  .composer-box { align-items: stretch; }
+  .composer-box .button { padding: 10px 12px; }
+  .list-top, .draft-summary, .quality-head, .draft-meta {
+    display: grid; grid-template-columns: 1fr; gap: 9px;
+  }
+  .badge-row { justify-content: flex-start; }
+  .inline-actions .button, .draft-actions .button { flex: 1 1 auto; }
+  .modal-backdrop { padding: 12px; align-items: start; overflow: auto; }
+  .modal { border-radius: 16px; padding: 18px; }
+  .draft-review-modal { max-height: none; }
+  .draft-review-header { display: grid; padding: 18px; }
+  .draft-review-actions { position: static; }
   .prompt-row { display: none; }
   .mobile-nav {
     position: fixed; display: grid; grid-template-columns: repeat(6, 1fr);

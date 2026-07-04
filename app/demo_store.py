@@ -338,8 +338,8 @@ class DemoStore:
                 post = self._draft(state, topic, "chat")
                 state["posts"].insert(0, post)
                 reply = (
-                    f"Done. I turned that into a draft using {self._provider_label(post)} "
-                    "and placed it below for review."
+                    "I drafted it and kept it in the review workspace. "
+                    "Read it through once, then choose the next move: revise the voice, save it, schedule it, or use the LinkedIn fallback."
                 )
                 actions = ["draft_created"]
                 kind = "draft_created"
@@ -1464,8 +1464,9 @@ class DemoStore:
             "Use first person when appropriate. Keep it publishable, specific, and under 2,600 characters. "
             "Use the user's writing samples and voice controls as the highest-priority style guide. "
             "Prefer concrete founder moments over broad claims. Avoid hype, cliches, and any phrases listed as avoided. "
-            "Use the requested structure when possible. Use short paragraphs. "
-            "If listing multiple points, use the user's preferred numbered style like 1/, 2/, 3/. "
+            "Vary the structure. Do not use the same hook-context-lesson-question sequence every time. "
+            "Choose the format that fits the topic: personal story, sharp observation, practical list, founder note, or reflective essay. "
+            "Use short paragraphs. If listing multiple points, use the user's preferred numbered style like 1/, 2/, 3/. "
             "End with the user's preferred CTA style. "
             "Do not repeat command phrases such as 'draft about' in the draft. "
             "Use Content Bank context only when it is clearly relevant to the requested topic. "
@@ -1556,14 +1557,14 @@ class DemoStore:
             return None
 
         system_prompt = (
-            "You are Mira, Blidx's content operating partner. You are a focused chatbot, "
-            "not a generic assistant. Help the user clarify LinkedIn angles, Content Bank "
-            "entries, draft direction, and publishing workflow. Keep replies warm, concise, "
-            "and practical. Structure useful replies as: short read of the situation, 2-3 options, "
-            "recommended next move, and one question. When suggesting angles, format them exactly as "
-            "'1/ Angle title: one-sentence explanation.' so the product can offer draft actions. "
-            "If the user asks for a draft, say you can draft it "
-            "and ask for one missing detail only if essential. Avoid hype and respect the user's voice controls."
+            "You are Mira, Blidx's content operating partner. You are not a generic assistant. "
+            "Your job is to help a founder turn real work into LinkedIn content. "
+            "Be calm, specific, and editorial. Avoid robotic phrases, hype, and repeated templates. "
+            "Do not always use the same structure. Sometimes ask one sharp question; sometimes offer options; "
+            "sometimes name the strongest angle directly. Keep replies short enough for a chat screen. "
+            "When suggesting angles, format them exactly as '1/ Angle title: one-sentence explanation.' "
+            "so the product can offer draft actions. If the user asks for a draft, say you can draft it "
+            "and ask for one missing detail only if essential. Respect the user's voice controls."
         )
         messages = state.get("messages", [])[-8:]
         prompt = "\n\n".join(
@@ -1591,8 +1592,8 @@ class DemoStore:
 
         if any(word in lowered for word in ("hi", "hello", "hey")) and len(content.split()) <= 4:
             return (
-                f"Hi. I’m here with the {company} context. You can tell me what happened this week, "
-                "ask for angles, or ask me to draft a LinkedIn post when you are ready."
+                "Hi. Tell me one real thing that happened this week, or ask me for angles from the Content Bank. "
+                f"I’ll keep the {company} context in the background and help you turn the strongest bit into a post."
             )
 
         if any(phrase in lowered for phrase in ("what can you do", "how does this work", "help me")):
@@ -1608,10 +1609,10 @@ class DemoStore:
         if "what should" in lowered:
             if latest:
                 return (
-                    "I’d post about the tension you already have in the Content Bank: "
-                    "AI is making the work feel more possible, but mental health still depends on trust, safety, and human connection.\n\n"
-                    f"The best starting point is this moment: “{latest}”\n\n"
-                    "That gives the post a real founder anchor instead of a generic AI opinion. If you want, ask me for angles or say “draft it.”"
+                    f"The strongest starting point is already in your Content Bank:\n\n“{latest}”\n\n"
+                    "I’d turn that into a post because it has a real moment, not just an opinion. "
+                    "The angle I’d test: what this moment changed in your thinking.\n\n"
+                    "Want three angles, or should I draft the strongest one?"
                 )
             return (
                 "I’d start with one real moment from this week. A post becomes much stronger when it begins with something you actually saw, built, learned, or questioned."
@@ -1620,11 +1621,11 @@ class DemoStore:
         if any(phrase in lowered for phrase in ("angle", "idea", "suggest", "topic")):
             if latest:
                 return (
-                    f"I see three possible angles for {company}:\n\n"
-                    f"1/ Personal founder moment: use “{latest}” as the opening, then reflect on what it changed in your thinking.\n\n"
-                    "2/ Industry point of view: talk about why AI can increase access, but mental health still needs trust and human connection.\n\n"
-                    f"3/ Audience question: ask {audience} where they believe technology should support care, and where it should stay in the background.\n\n"
-                    "The strongest one for LinkedIn is angle 2, because it connects product, care, and founder judgment. Want me to draft that?"
+                    f"Here are three directions I’d consider:\n\n"
+                    f"1/ Personal founder moment: open with “{latest}” and name what it made you reconsider.\n\n"
+                    "2/ Industry point of view: show where technology helps, and where human judgment still matters.\n\n"
+                    f"3/ Reader question: ask {audience} where they think the workflow breaks today.\n\n"
+                    "I’d draft angle 1 first because it is the hardest for a generic AI tool to copy."
                 )
             return (
                 "I can suggest angles, but I need one real moment first. Tell me something that happened this week: an event, customer conversation, launch, lesson, or tension you noticed."

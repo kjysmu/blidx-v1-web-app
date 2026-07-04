@@ -7,6 +7,8 @@ const ui = {
   auth: JSON.parse(localStorage.getItem("blidx_auth") || "null"),
   demoMode: localStorage.getItem("blidx_demo") === "true",
   authMode: "login",
+  authError: "",
+  authSubmitting: false,
   selectedCategory: "insights",
   libraryFilter: "all",
   librarySearch: "",
@@ -17,6 +19,7 @@ const ui = {
   scrollChatAfterRender: false,
   pendingMessages: [],
   reviewDraftId: null,
+  expandedLibraryPosts: new Set(),
 };
 
 const api = async (path, options = {}) => {
@@ -171,11 +174,12 @@ function renderAuth() {
     <section class="auth-card">
       <h2>${isSignup ? "Sign up" : "Log in"}</h2>
       <p class="muted">${isSignup ? "Use at least 8 characters for the password." : "Use the email and password you registered with."}</p>
+      ${ui.authError ? `<div class="notice error">${escapeHtml(ui.authError)}</div>` : ""}
       <form id="auth-form">
         ${isSignup ? '<div class="field"><label>Name</label><input class="input" name="user_name" placeholder="Jae" /></div>' : ""}
         <div class="field"><label>Email</label><input class="input" name="email" type="email" required placeholder="you@example.com" /></div>
         <div class="field"><label>Password</label><input class="input" name="password" type="password" required minlength="${isSignup ? 8 : 1}" placeholder="••••••••" /></div>
-        <button class="button" style="width:100%">${isSignup ? "Create account" : "Log in"}</button>
+        <button class="button" style="width:100%" ${ui.authSubmitting ? "disabled" : ""}>${ui.authSubmitting ? "Checking..." : isSignup ? "Create account" : "Log in"}</button>
       </form>
       <button class="button ghost auth-switch" id="toggle-auth">${isSignup ? "Already have an account? Log in" : "New here? Create account"}</button>
       <button class="button secondary auth-switch" id="continue-demo">Continue with public demo</button>
@@ -187,6 +191,7 @@ function bindAuth() {
   document.querySelector("#auth-form")?.addEventListener("submit", submitAuth);
   document.querySelector("#toggle-auth")?.addEventListener("click", () => {
     ui.authMode = ui.authMode === "login" ? "signup" : "login";
+    ui.authError = "";
     render();
   });
   document.querySelector("#continue-demo")?.addEventListener("click", async () => {
@@ -267,7 +272,13 @@ function renderOnboarding() {
   return `<section class="page onboarding-page">
     <div class="eyebrow">Workspace setup</div>
     <h1>Set up Mira’s context.</h1>
-    <p class="lead">This takes one minute. Mira will use these details for chat, Content Bank decisions, and LinkedIn drafts.</p>
+    <p class="lead">This questionnaire gives Mira the minimum context needed before a tester starts drafting: founder identity, audience, voice, and one real Content Bank memory.</p>
+    <div class="onboarding-steps">
+      <div><strong>1</strong><span>Founder + company</span></div>
+      <div><strong>2</strong><span>Audience + content goals</span></div>
+      <div><strong>3</strong><span>Voice + writing examples</span></div>
+      <div><strong>4</strong><span>First Content Bank memory</span></div>
+    </div>
     <form class="card form-grid onboarding-form" id="onboarding-form">
       ${field("First name", "first_name", p.first_name || accountLabel())}
       ${field("Role", "role", p.role || "Founder")}
@@ -280,8 +291,12 @@ function renderOnboarding() {
       <div class="field"><label>Posting frequency</label><select name="posting_frequency"><option value="1-2x_per_week">1–2× per week</option><option value="3-4x_per_week" selected>3–4× per week</option><option value="5+_per_week">5+ per week</option></select></div>
       <div class="field"><label>Tone</label><select name="tone"><option>Insightful & measured</option><option>Bold & opinionated</option><option>Warm & personal</option><option>Data-driven & practical</option></select></div>
       ${field("Writing style notes", "writing_style", p.writing_style || "Reflective, specific, founder-led, and practical.", true)}
-      <div class="field full"><label>First Content Bank memory</label><textarea name="first_memory" placeholder="Example: This week I spoke with a founder who said content feels hard because the real work is scattered across notes, calls, and decisions."></textarea></div>
-      <div class="field full onboarding-actions"><button class="button">Complete setup</button><button type="button" class="button ghost" id="skip-onboarding">Skip for now</button></div>
+      ${textAreaField("Writing samples", "writing_samples", (p.writing_samples || []).join("\n\n---\n\n"), "Paste 1-3 LinkedIn posts or writing examples. Separate samples with ---.", true)}
+      ${field("Preferred structure", "preferred_structure", p.preferred_structure || "Hook, real moment, lesson, question", true)}
+      ${field("Phrases to avoid", "avoided_phrases", (p.avoided_phrases || []).join(", "), true)}
+      ${field("CTA style", "cta_style", p.cta_style || "Reflective question", true)}
+      <div class="field full"><label>First Content Bank memory</label><textarea name="first_memory" placeholder="Example: This week I spoke with a founder who said content feels hard because the real work is scattered across notes, calls, and decisions." required minlength="3"></textarea><p class="field-help">This is required for the first setup so Mira does not start from an empty shell.</p></div>
+      <div class="field full onboarding-actions"><button class="button">Complete setup</button><button type="button" class="button ghost" id="skip-onboarding">Use starter context for now</button></div>
     </form>
   </section>`;
 }
@@ -305,6 +320,11 @@ function bindOnboarding() {
         posting_frequency: p.posting_frequency || "3-4x_per_week",
         tone: p.tone || "Insightful & measured",
         writing_style: p.writing_style || "",
+        writing_samples: p.writing_samples || [],
+        preferred_structure: p.preferred_structure || "Hook, real moment, lesson, question",
+        avoided_phrases: p.avoided_phrases || ["game changer", "unlock", "10x"],
+        cta_style: p.cta_style || "Reflective question",
+        first_memory: "I am setting up my Blidx workspace and want Mira to help turn real work moments into LinkedIn posts.",
       }),
     });
     await refresh();
@@ -362,65 +382,33 @@ function currentDraftShortcut(activeDrafts) {
 }
 
 function chatTimeline(messages, drafts) {
+  const draftById = new Map(drafts.map((draft) => [draft.id, draft]));
   const renderedDraftIds = new Set();
-  const usedDraftMessageIndexes = new Set();
-  const beforeMessage = new Map();
-  const afterMessage = new Map();
-  const trailingDrafts = [];
   const items = [];
 
-  const addDraftToBucket = (bucket, index, draft, compact = true) => {
-    const existing = bucket.get(index) || [];
-    existing.push({ draft, compact });
-    bucket.set(index, existing);
-  };
+  messages.forEach((message) => {
+    const messageTime = timeValue(message.created_at);
+    items.push({ type: "message", time: messageTime, html: messageBubble(message) });
+    const linkedDraft = message.post_id ? draftById.get(message.post_id) : null;
+    if (linkedDraft) {
+      renderedDraftIds.add(linkedDraft.id);
+      items.push({
+        type: "draft",
+        time: messageTime + 1,
+        html: draftCard(linkedDraft, true),
+      });
+    }
+  });
 
   drafts.forEach((draft) => {
-    const linkedMessageIndex = messages.findIndex((message) => message.post_id === draft.id);
-    if (linkedMessageIndex >= 0) {
-      addDraftToBucket(afterMessage, linkedMessageIndex, draft, linkedMessageIndex < messages.length - 1);
-      renderedDraftIds.add(draft.id);
-      return;
-    }
-
-    const draftTime = timeValue(draft.created_at);
-    const draftMessageIndex = messages.findIndex((message, index) => (
-      !usedDraftMessageIndexes.has(index)
-      && message.kind === "draft_created"
-      && !message.post_id
-      && Math.abs(timeValue(message.created_at) - draftTime) < 5 * 60 * 1000
-    ));
-    if (draftMessageIndex >= 0) {
-      usedDraftMessageIndexes.add(draftMessageIndex);
-      addDraftToBucket(afterMessage, draftMessageIndex, draft, draftMessageIndex < messages.length - 1);
-      renderedDraftIds.add(draft.id);
-      return;
-    }
-
-    const laterMessageIndex = messages.findIndex((message) => timeValue(message.created_at) > draftTime);
-    if (laterMessageIndex >= 0) {
-      addDraftToBucket(beforeMessage, laterMessageIndex, draft, true);
-    } else {
-      trailingDrafts.push({ draft, compact: false });
-    }
-    renderedDraftIds.add(draft.id);
+    if (renderedDraftIds.has(draft.id)) return;
+    items.push({ type: "draft", time: timeValue(draft.created_at), html: draftCard(draft, true) });
   });
 
-  messages.forEach((message, index) => {
-    (beforeMessage.get(index) || []).forEach(({ draft, compact }) => {
-      items.push(draftCard(draft, compact));
-    });
-    items.push(messageBubble(message));
-    (afterMessage.get(index) || []).forEach(({ draft, compact }) => {
-      items.push(draftCard(draft, compact));
-    });
-  });
-
-  trailingDrafts.forEach(({ draft, compact }) => {
-    items.push(draftCard(draft, compact));
-  });
-
-  return items.join("");
+  return items
+    .sort((a, b) => a.time - b.time || (a.type === "message" ? -1 : 1))
+    .map((item) => item.html)
+    .join("");
 }
 
 function timeValue(value) {
@@ -587,6 +575,7 @@ function renderBank() {
     ${bankSummary()}
     <div class="card">
       <h3>What happened today?</h3>
+      <p class="muted small">Good entries are concrete: who/what happened, why it mattered, and what it changed in your thinking.</p>
       <div class="template-grid">${memoryTemplates.map(([id, icon, label]) => `<button class="template ${ui.selectedCategory === id ? "active" : ""}" data-category="${id}"><span>${icon}</span>${label}</button>`).join("")}</div>
       <form id="bank-form"><textarea id="bank-text" placeholder="Example: We launched our first founder test today. The biggest lesson was that workflow ownership matters more than another writing prompt." required minlength="3"></textarea><button class="button" style="margin-top:10px">Save to Content Bank</button></form>
     </div>
@@ -721,9 +710,11 @@ function libraryEmptyState() {
 
 function libraryItem(post) {
   const excerpt = stripMarkdown(post.content).slice(0, 220);
+  const expanded = ui.expandedLibraryPosts.has(post.id);
   return `<div class="list-item">
-    <div class="list-top"><div><strong>${escapeHtml(post.title)}</strong><p>${escapeHtml(excerpt)}${post.content.length > 220 ? "…" : ""}</p><button class="read-more" data-draft-review="${post.id}">Read full draft</button></div><span class="badge ${post.status}">${post.status}</span></div>
+    <div class="list-top"><div><strong>${escapeHtml(post.title)}</strong><p>${escapeHtml(excerpt)}${post.content.length > 220 ? "…" : ""}</p><button class="read-more" data-library-expand="${post.id}">${expanded ? "Hide full draft" : "Show full draft"}</button></div><span class="badge ${post.status}">${post.status}</span></div>
     <div class="small muted" style="margin-top:10px">${post.char_count} characters · v${post.version} · ${escapeHtml(post.generation_provider || "template")} · ${escapeHtml(scheduleSummary(post))}</div>
+    ${expanded ? `<div class="library-full-draft draft-content markdown">${renderMarkdown(post.content || "")}</div>` : ""}
     ${qualityReviewPanel(post, true)}
     <div class="inline-actions">
       <button class="button" data-draft-review="${post.id}">Open draft workspace</button>
@@ -785,6 +776,28 @@ function statCard(label, value, helper) {
   return `<div class="card stat-card"><div class="muted small">${label}</div><div class="metric">${value}</div><p class="muted small">${escapeHtml(helper)}</p></div>`;
 }
 
+function productReadinessPanel() {
+  const hasProfile = Boolean(ui.state.profile?.company_name && ui.state.profile?.company_description);
+  const hasMemory = (ui.state.content_bank || []).length > 0;
+  const hasDraft = (ui.state.posts || []).some((post) => post.status !== "deleted");
+  const linkedin = ui.integrations?.linkedin;
+  const checks = [
+    ["Authentication", ui.state.auth?.authenticated || ui.demoMode, ui.state.auth?.authenticated ? "Signed in workspace" : "Public demo mode"],
+    ["Onboarding", ui.state.onboarding_completed, ui.state.onboarding_completed ? "Completed" : "Needs setup"],
+    ["Profile context", hasProfile, hasProfile ? "Company context saved" : "Add company description"],
+    ["Content Bank", hasMemory, hasMemory ? `${ui.state.content_bank.length} entries` : "Add first memory"],
+    ["Draft workflow", hasDraft, hasDraft ? "Library has drafts/posts" : "Create first draft"],
+    ["LinkedIn", linkedin?.connected || linkedin?.configured, linkedin?.connected ? "Connected" : linkedin?.configured ? "OAuth configured, needs redirect/app access" : "Manual fallback only"],
+  ];
+  const readyCount = checks.filter(([, done]) => done).length;
+  return `<div class="card readiness-card">
+    <div class="card-head"><div><h3>MVP readiness checklist</h3><p class="muted small">This is the honest staging status testers should expect.</p></div><span class="badge ${readyCount >= 5 ? "published" : "draft"}">${readyCount}/${checks.length}</span></div>
+    <div class="readiness-grid">
+      ${checks.map(([label, done, detail]) => `<div class="readiness-item ${done ? "done" : ""}"><strong>${done ? "✓" : "○"} ${escapeHtml(label)}</strong><span>${escapeHtml(detail)}</span></div>`).join("")}
+    </div>
+  </div>`;
+}
+
 function renderSettings() {
   const p = ui.state.profile;
   const anthropic = ui.integrations?.anthropic;
@@ -793,6 +806,7 @@ function renderSettings() {
   const linkedinBadge = linkedin?.connected ? "Connected" : linkedin?.configured ? "OAuth configured" : "Fallback ready";
   const linkedinClass = linkedin?.connected ? "published" : linkedin?.configured ? "scheduled" : "draft";
   return `<section class="page"><div class="eyebrow">Personalization</div><h1>Settings</h1><p class="lead">These details are loaded fresh whenever Mira creates a draft.</p>
+    ${productReadinessPanel()}
     ${ui.notice ? `<div class="notice">${escapeHtml(ui.notice)}</div>` : ""}
     <form class="card form-grid" id="profile-form">
       ${field("First name", "first_name", p.first_name)}
@@ -855,6 +869,18 @@ function bindView() {
   document.querySelectorAll("[data-draft-review]").forEach((button) => {
     button.onclick = () => reviewDraft(button.dataset.draftReview);
   });
+  document.querySelectorAll("[data-library-expand]").forEach((button) => {
+    button.onclick = () => toggleLibraryPost(button.dataset.libraryExpand);
+  });
+  document.querySelectorAll("[data-modal-close]").forEach((button) => {
+    button.onclick = () => { ui.modal = null; render(); };
+  });
+  document.querySelectorAll("[data-linkedin-defer]").forEach((button) => {
+    button.onclick = deferLinkedInTracking;
+  });
+  document.querySelectorAll("[data-linkedin-track]").forEach((button) => {
+    button.onclick = () => trackLinkedInUrl(button.dataset.linkedinTrack);
+  });
   document.querySelector("#close-draft-review")?.addEventListener("click", () => {
     ui.reviewDraftId = null;
     render();
@@ -875,6 +901,15 @@ function bindView() {
 
 function reviewDraft(id) {
   ui.reviewDraftId = id;
+  render();
+}
+
+function toggleLibraryPost(id) {
+  if (ui.expandedLibraryPosts.has(id)) {
+    ui.expandedLibraryPosts.delete(id);
+  } else {
+    ui.expandedLibraryPosts.add(id);
+  }
   render();
 }
 
@@ -916,6 +951,9 @@ async function submitAuth(event) {
   const payload = Object.fromEntries(form.entries());
   const path = ui.authMode === "signup" ? "/auth/register" : "/auth/login";
   try {
+    ui.authError = "";
+    ui.authSubmitting = true;
+    render();
     const auth = await api(path, { method: "POST", body: JSON.stringify(payload) });
     ui.auth = auth;
     ui.demoMode = false;
@@ -924,7 +962,11 @@ async function submitAuth(event) {
     await refresh();
     showToast(ui.authMode === "signup" ? "Workspace created" : "Logged in");
   } catch (error) {
+    ui.authError = error.message;
     showToast(error.message);
+  } finally {
+    ui.authSubmitting = false;
+    render();
   }
 }
 
@@ -934,6 +976,8 @@ async function completeOnboarding(event) {
   const payload = Object.fromEntries(form.entries());
   payload.audience = payload.audience.split(",").map((v) => v.trim()).filter(Boolean);
   payload.expertise = payload.expertise.split(",").map((v) => v.trim()).filter(Boolean);
+  payload.writing_samples = (payload.writing_samples || "").split(/\n\s*---\s*\n/).map((v) => v.trim()).filter(Boolean);
+  payload.avoided_phrases = (payload.avoided_phrases || "").split(",").map((v) => v.trim()).filter(Boolean);
   payload.content_types = ["Industry insights", "Personal stories", "Lessons learned"];
   try {
     ui.loading = true;
@@ -1179,10 +1223,8 @@ async function copyAndOpenLinkedIn(id) {
 }
 
 function showLinkedInTrackingModal(id) {
-  ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>Did you post it on LinkedIn?</h3><p class="muted">After you paste and publish the draft on LinkedIn, add the post URL here so Blidx can mark it as published. If you have not posted it yet, choose Not yet and the draft will stay available in Blidx.</p><input class="input" id="linkedin-url" placeholder="https://www.linkedin.com/feed/update/..." /><div class="modal-actions"><button class="button ghost" id="linkedin-not-yet">Not yet</button><button class="button" id="save-linkedin-url">Mark posted</button></div></div></div>`;
+  ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>Did you post it on LinkedIn?</h3><p class="muted">After you paste and publish the draft on LinkedIn, add the post URL here so Blidx can mark it as published. If you have not posted it yet, choose Not yet and the draft will stay available in Blidx.</p><input class="input" id="linkedin-url" placeholder="https://www.linkedin.com/feed/update/..." /><div class="modal-actions"><button class="button ghost" data-linkedin-defer="true">Not yet</button><button class="button" data-linkedin-track="${escapeHtml(id)}">Mark posted</button></div></div></div>`;
   render();
-  document.querySelector("#linkedin-not-yet").onclick = deferLinkedInTracking;
-  document.querySelector("#save-linkedin-url").onclick = () => trackLinkedInUrl(id);
 }
 
 function deferLinkedInTracking() {
