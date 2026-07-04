@@ -726,6 +726,7 @@ function libraryItem(post) {
     <div class="small muted" style="margin-top:10px">${post.char_count} characters · v${post.version} · ${escapeHtml(post.generation_provider || "template")} · ${escapeHtml(scheduleSummary(post))}</div>
     ${qualityReviewPanel(post, true)}
     <div class="inline-actions">
+      <button class="button" data-draft-review="${post.id}">${post.status === "pending" || post.status === "draft" ? "Open draft workspace" : "View full post"}</button>
       ${post.status === "pending" || post.status === "draft" ? `<button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button><button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>` : ""}
       <button class="button ghost" data-draft-action="copy" data-id="${post.id}">Copy</button>
       ${post.status !== "published" ? `<button class="button secondary" data-draft-action="linkedin" data-id="${post.id}">${ui.integrations?.linkedin?.connected ? "Publish to LinkedIn" : "Copy & open LinkedIn"}</button>` : ""}
