@@ -202,7 +202,7 @@ def test_authenticated_golden_path_end_to_end():
     assert "draft_created" in draft_payload["actions"]
     post = draft_payload["post"]
     assert post["status"] == "pending"
-    assert post["quality_review"]["max_score"] == 5
+    assert post["quality_review"]["max_score"] == 6
     assert post["variants"]
 
     edited = client.post(

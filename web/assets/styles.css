@@ -323,7 +323,7 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .quality-review.compact { margin: 13px 0 0; background: #fff; }
 .quality-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .quality-head strong { color: var(--ink); }
-.quality-checks { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.quality-checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; }
 .quality-check {
   display: grid; gap: 3px; padding: 9px; border: 1px solid var(--line);
   border-radius: 11px; background: white; font-size: 12px;

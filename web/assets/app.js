@@ -706,12 +706,23 @@ function qualityReviewPanel(post, compact = false) {
 function buildClientQualityReview(post) {
   const content = post.content || "";
   const plain = stripMarkdown(content).toLowerCase();
+  const robotic = [
+    "in today's fast-paced",
+    "game changer",
+    "unlock",
+    "not just",
+    "delve into",
+    "revolutionize",
+    "transform the way",
+    "leverage ai",
+  ].some((phrase) => plain.includes(phrase));
   const checks = [
     ["Real moment", Boolean((post.sources || []).length), "Uses a Content Bank memory or specific source."],
     ["Clear POV", /i think|i believe|my working principle|the question is|that tension matters|1\//.test(plain), "Has a point of view or useful structure."],
     ["Founder voice", /founder|building|at |i keep|my /.test(plain), "Connects to founder perspective."],
     ["Good CTA", content.includes("?") || /comment|connect|share/.test(plain), "Ends with a question or invitation."],
     ["LinkedIn length", content.length >= 300 && content.length <= 2200, "Readable LinkedIn length."],
+    ["Human voice", !robotic && !content.startsWith("I keep thinking about"), "Avoids common AI phrasing and repeated openings."],
   ].map(([label, passed, detail], index) => ({ id: `client_${index}`, label, passed, detail }));
   const score = checks.filter((check) => check.passed).length;
   return {

@@ -1280,6 +1280,22 @@ class DemoStore:
         return post
 
     @staticmethod
+    def _robotic_phrases() -> tuple[str, ...]:
+        return (
+            "in today's fast-paced",
+            "game changer",
+            "unlock",
+            "10x",
+            "not just",
+            "delve into",
+            "revolutionize",
+            "transform the way",
+            "leverage ai",
+            "cutting-edge",
+            "seamlessly",
+        )
+
+    @staticmethod
     def _quality_review(state: dict, post: dict) -> dict:
         content = post.get("content", "")
         plain = content.lower()
@@ -1301,6 +1317,7 @@ class DemoStore:
             if len(term.strip(".,:;!?")) > 5
         ][:8]
         memory_overlap = sum(1 for term in memory_terms if term in plain)
+        robotic_hits = [phrase for phrase in DemoStore._robotic_phrases() if phrase in plain]
 
         checks = [
             {
@@ -1382,6 +1399,16 @@ class DemoStore:
                     "Readable LinkedIn length."
                     if 300 <= len(content) <= 2200
                     else "Length may be too short or too long for review."
+                ),
+            },
+            {
+                "id": "human_voice",
+                "label": "Human voice",
+                "passed": not robotic_hits and "I keep thinking about" not in content[:80],
+                "detail": (
+                    "Avoids common AI phrasing and overused openings."
+                    if not robotic_hits and "I keep thinking about" not in content[:80]
+                    else "Still has robotic or repeated AI-style phrasing."
                 ),
             },
         ]
@@ -1504,6 +1531,7 @@ class DemoStore:
         topic_terms = DemoStore._topic_terms(topic)
         industry_terms = DemoStore._topic_terms(industry)
         closing = DemoStore._closing_question(profile)
+        style = DemoStore._fallback_style(state, topic)
         use_mental_health_frame = (
             "mental health" in industry.lower()
             and ("mental health" in topic.lower() or bool(topic_terms & industry_terms))
@@ -1529,23 +1557,66 @@ class DemoStore:
             )
 
         personal_block = memory_text or (
-            f"The interesting part is not simply that {hook} exists. It is what it changes about taste, judgment, and the way people decide what feels meaningful."
+            f"The interesting part is what {hook} changes about taste, judgment, and the way people decide what feels meaningful."
         )
-        anchor = (
-            f"At {company}, the best content does not start as content. It starts as a real moment from the work."
-            if use_company
-            else "For founders, the best content does not start as a generic topic. It starts with a clear point of view."
-        )
+        if style == "field_note":
+            company_line = (
+                f"At {company}, that is the part of the work I want to make easier to carry."
+                if use_company
+                else "That is the part of the work I think founders often lose too quickly."
+            )
+            return (
+                f"A small note from this week:\n\n"
+                f"{personal_block}\n\n"
+                "The obvious takeaway would be to write faster.\n\n"
+                "I think the better takeaway is quieter: protect the moment before it gets flattened into a generic opinion.\n\n"
+                f"{company_line}\n\n"
+                f"For {audience}, the useful signal is rarely the polished conclusion. "
+                "It is the decision, doubt, conversation, or constraint that produced the conclusion.\n\n"
+                f"{closing}"
+            )
+
+        if style == "sharp_pov":
+            anchor = (
+                f"Building {company} has made this feel less theoretical."
+                if use_company
+                else "This feels less theoretical when you look at how founders actually work."
+            )
+            return (
+                f"{DemoStore._sentence_case(hook)} is mostly treated as a writing problem.\n\n"
+                "I do not think that is quite right.\n\n"
+                f"{anchor}\n\n"
+                f"The real issue is deciding what is worth saying before the draft exists. {personal_block}\n\n"
+                "Once that decision is clear, the writing gets easier.\n\n"
+                "Before that, even a good AI draft can feel strangely empty.\n\n"
+                f"For {audience}, I would rather see fewer posts with more evidence of judgment.\n\n"
+                f"{closing}"
+            )
+
         return (
-            f"I keep thinking about {hook}.\n\n"
-            f"{anchor}\n\n"
-            f"For example: {personal_block}\n\n"
-            "That is the part I want to protect as AI becomes more present in how founders communicate.\n\n"
-            "The value is not only speed. It is helping a founder notice what they already learned, sharpen it, "
-            f"and share it with {audience} in a way that feels specific.\n\n"
-            f"My working principle: use the system for structure, but keep the judgment, context, and point of view human.\n\n"
+            f"One thing I would not outsource too quickly: the judgment behind {hook}.\n\n"
+            f"{personal_block}\n\n"
+            "AI can help shape the page. It can make a messy thought easier to work with.\n\n"
+            "But the reason a post feels believable is usually smaller and more human than the final wording:\n\n"
+            "1/ what actually happened\n"
+            "2/ what it made you reconsider\n"
+            "3/ why your audience should care now\n\n"
+            f"That is the piece I want {company if use_company else 'the workflow'} to protect.\n\n"
             f"{closing}"
         )
+
+    @staticmethod
+    def _fallback_style(state: dict, topic: str) -> str:
+        seed = len(topic) + len(state.get("posts", [])) + len(state.get("messages", []))
+        styles = ("field_note", "sharp_pov", "practical_note")
+        return styles[seed % len(styles)]
+
+    @staticmethod
+    def _sentence_case(text: str) -> str:
+        cleaned = text.strip()
+        if not cleaned:
+            return "This"
+        return cleaned[0].upper() + cleaned[1:]
 
     @staticmethod
     def _clean_topic(topic: str) -> str:
@@ -1719,9 +1790,11 @@ class DemoStore:
             "Use the user's writing samples and voice controls as the highest-priority style guide. "
             "Prefer concrete founder moments over broad claims. Avoid hype, cliches, and any phrases listed as avoided. "
             "Vary the structure. Do not use the same hook-context-lesson-question sequence every time. "
-            "Choose the format that fits the topic: personal story, sharp observation, practical list, founder note, or reflective essay. "
+            "Choose the format that fits the topic: field note, sharp observation, practical list, founder memo, or reflective essay. "
+            "Use plain, slightly imperfect human language. It is okay to be concise, unresolved, or specific rather than polished. "
+            "Do not over-frame the topic as a grand universal lesson unless the user gave evidence for it. "
             "Avoid obvious AI patterns: 'not just X, but Y', 'in today's fast-paced world', 'game changer', 'unlock', "
-            "'the future of', and generic inspirational endings. "
+            "'the future of', 'delve into', 'revolutionize', 'transform the way', 'leverage AI', and generic inspirational endings. "
             "Avoid over-explaining. Leave some texture and human imperfection if it fits the user's style. "
             "Use short paragraphs. If listing multiple points, use the user's preferred numbered style like 1/, 2/, 3/. "
             "End with the user's preferred CTA style. "

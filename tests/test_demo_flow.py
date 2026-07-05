@@ -433,13 +433,14 @@ def test_draft_includes_variants_and_can_apply_one():
 
     review = draft["quality_review"]
     assert review["label"].startswith("Draft readiness:")
-    assert review["max_score"] == 5
+    assert review["max_score"] == 6
     assert {check["id"] for check in review["checks"]} == {
         "real_moment",
         "clear_pov",
         "founder_voice",
         "good_cta",
         "linkedin_length",
+        "human_voice",
     }
     assert len(draft["variants"]) == 3
     assert {variant["id"] for variant in draft["variants"]} == {
@@ -458,7 +459,7 @@ def test_draft_includes_variants_and_can_apply_one():
     assert updated["selected_variant_id"] == "practical_lesson"
     assert updated["version"] == 2
     assert "1/ Capture the real moment" in updated["content"]
-    assert updated["quality_review"]["max_score"] == 5
+    assert updated["quality_review"]["max_score"] == 6
 
     client.post("/api/reset")
 
@@ -506,5 +507,33 @@ def test_profile_voice_controls_are_saved_and_affect_fallback_cta():
         json={"topic": "why founder content needs workflow ownership"},
     ).json()
     assert "What would you add from your own experience?" in draft["content"]
+
+    client.post("/api/reset")
+
+
+def test_fallback_draft_avoids_robotic_repeated_opening():
+    client.post("/api/reset")
+    client.post(
+        "/api/content-bank",
+        json={
+            "category": "insights",
+            "raw_text": "This week I noticed founders keep asking for better AI writing, but the real bottleneck is choosing what deserves a post.",
+        },
+    )
+
+    draft = client.post(
+        "/api/drafts",
+        json={"topic": "why founder content needs workflow ownership"},
+    ).json()
+
+    lowered = draft["content"].lower()
+    assert not draft["content"].startswith("I keep thinking about")
+    assert "not just" not in lowered
+    assert "game changer" not in lowered
+    assert "unlock" not in lowered
+    human_voice = next(
+        check for check in draft["quality_review"]["checks"] if check["id"] == "human_voice"
+    )
+    assert human_voice["passed"] is True
 
     client.post("/api/reset")
