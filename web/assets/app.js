@@ -17,6 +17,7 @@ const ui = {
   toast: "",
   loading: false,
   scrollChatAfterRender: false,
+  quickActionsOpen: false,
   pendingMessages: [],
   reviewDraftId: null,
   expandedLibraryPosts: new Set(),
@@ -105,7 +106,6 @@ const navItems = [
   ["bank", "▦", "Bank"],
   ["library", "▤", "Library"],
   ["calendar", "□", "Calendar"],
-  ["analytics", "⌁", "Analytics"],
   ["settings", "⚙", "Settings"],
 ];
 
@@ -117,6 +117,26 @@ const memoryTemplates = [
 
 const freshnessOptions = [["fresh", "Fresh"], ["used", "Used"], ["archived", "Archived"]];
 const potentialOptions = [["high", "High"], ["medium", "Medium"], ["low", "Low"]];
+
+function sectionLabel() {
+  return {
+    chat: "Content workspace",
+    bank: "Content Bank",
+    library: "Library",
+    calendar: "Calendar",
+    analytics: "Progress",
+    settings: "Settings",
+  }[ui.tab] || "Content workspace";
+}
+
+function quickActionsMenu() {
+  if (!ui.quickActionsOpen) return "";
+  return `<div class="quick-actions-menu">
+    <button data-action="qa-draft"><span>Draft</span><strong>Draft a post</strong><small>Start a Mira draft from any idea.</small></button>
+    <button data-action="qa-checkin"><span>Check-in</span><strong>Daily check-in</strong><small>Capture a fresh Content Bank moment.</small></button>
+    <button data-action="qa-progress"><span>Progress</span><strong>Performance & progress</strong><small>Open the lightweight Analytics view.</small></button>
+  </div>`;
+}
 
 function layout(content) {
   if (!ui.auth && !ui.demoMode) {
@@ -143,8 +163,15 @@ function layout(content) {
       </aside>
       <main class="main">
         <header class="topbar">
-          <div class="mira-id"><div class="avatar">M</div><div><div class="mira-name">Mira</div><div class="online">● Online · content lead</div></div></div>
-          <div class="top-actions"><span class="account-pill">${accountLabel()}</span><button class="icon-button" data-action="new-draft">＋ Draft</button><button class="icon-button" data-action="logout">${ui.auth ? "Log out" : "Exit demo"}</button></div>
+          <div class="mira-id"><div class="avatar">M</div><div><div class="mira-name">Mira</div><div class="online">● ${sectionLabel()}</div></div></div>
+          <div class="top-actions">
+            <span class="account-pill">${accountLabel()}</span>
+            <div class="quick-actions-wrap">
+              <button class="icon-button primary-quick" data-action="quick-actions" aria-label="Open quick actions">＋</button>
+              ${quickActionsMenu()}
+            </div>
+            <button class="icon-button" data-action="logout">${ui.auth ? "Log out" : "Exit demo"}</button>
+          </div>
         </header>
         ${content}
       </main>
@@ -208,19 +235,38 @@ function accountLabel() {
 
 function bindGlobal() {
   document.querySelectorAll("[data-tab]").forEach((button) => {
-    button.onclick = () => { ui.tab = button.dataset.tab; ui.modal = null; render(); };
+    button.onclick = () => {
+      ui.tab = button.dataset.tab;
+      ui.modal = null;
+      ui.quickActionsOpen = false;
+      render();
+    };
   });
   document.querySelectorAll('[data-action="new-draft"]').forEach((button) => {
+    button.onclick = startDraft;
+  });
+  document.querySelectorAll('[data-action="quick-actions"]').forEach((button) => {
     button.onclick = () => {
-      ui.tab = "chat";
+      ui.quickActionsOpen = !ui.quickActionsOpen;
       render();
-      setTimeout(() => {
-        const input = document.querySelector("#chat-message");
-        if (input) {
-          input.value = "Draft a post about ";
-          input.focus();
-        }
-      }, 0);
+    };
+  });
+  document.querySelectorAll('[data-action="qa-draft"]').forEach((button) => {
+    button.onclick = startDraft;
+  });
+  document.querySelectorAll('[data-action="qa-checkin"]').forEach((button) => {
+    button.onclick = () => {
+      ui.quickActionsOpen = false;
+      ui.tab = "bank";
+      render();
+      setTimeout(() => document.querySelector("#bank-text")?.focus(), 0);
+    };
+  });
+  document.querySelectorAll('[data-action="qa-progress"]').forEach((button) => {
+    button.onclick = () => {
+      ui.quickActionsOpen = false;
+      ui.tab = "analytics";
+      render();
     };
   });
   document.querySelectorAll('[data-action="logout"]').forEach((button) => {
@@ -229,6 +275,19 @@ function bindGlobal() {
   document.querySelectorAll('[data-action="sample-draft"]').forEach((button) => {
     button.onclick = createSampleDraft;
   });
+}
+
+function startDraft() {
+  ui.quickActionsOpen = false;
+  ui.tab = "chat";
+  render();
+  setTimeout(() => {
+    const input = document.querySelector("#chat-message");
+    if (input) {
+      input.value = "Draft a post about ";
+      input.focus();
+    }
+  }, 0);
 }
 
 function render() {
@@ -348,6 +407,7 @@ function renderChat() {
       <div class="eyebrow">Your content workdesk</div>
       <h1>Good ${new Date().getHours() < 12 ? "morning" : "afternoon"}, ${escapeHtml(profile.first_name)}.</h1>
       <p class="lead">Chat with Mira like a content partner. Share a moment, ask for an angle, or say “Draft a post about…” and I’ll create a review-ready LinkedIn draft.</p>
+      ${miraBrief()}
       ${workflowGuide()}
       <div class="grid">
         <div class="card"><div class="card-head"><h3>This week</h3><span class="badge ${published >= goal ? "published" : "pending"}">${published}/${goal} posts</span></div><div class="metric">${Math.min(Math.round((published / goal) * 100), 100)}%</div><div class="progress"><span style="width:${Math.min((published / goal) * 100, 100)}%"></span></div><div class="muted small">Based on your ${escapeHtml(profile.posting_frequency.replaceAll("_", " "))} goal.</div></div>
@@ -367,9 +427,25 @@ function renderChat() {
           ${quickPrompt("What should I post about today?")}
           ${quickPrompt("Give me 3 angles from my Content Bank")}
           ${quickPrompt("Draft a post from my latest memory")}
+          <button class="prompt-chip" type="button" data-action="qa-checkin">Daily check-in</button>
+          <button class="prompt-chip" type="button" data-action="qa-progress">Progress</button>
         </div>
       </div>
     </section>`;
+}
+
+function miraBrief() {
+  return `<div class="mira-brief">
+    <div>
+      <strong>Mira’s role in this MVP</strong>
+      <p>Capture real founder context, shape it into sharper angles, then help move one draft through review.</p>
+    </div>
+    <div class="brief-grid">
+      <button data-action="qa-checkin"><span>1</span><strong>Capture</strong><small>Save today’s real moment.</small></button>
+      <button data-action="qa-draft"><span>2</span><strong>Draft</strong><small>Turn context into a post.</small></button>
+      <button data-tab="library"><span>3</span><strong>Review</strong><small>Edit, approve, copy, or skip.</small></button>
+    </div>
+  </div>`;
 }
 
 function currentDraftShortcut(activeDrafts) {
@@ -553,17 +629,17 @@ function workflowGuide() {
     ["Save one real moment to Content Bank", hasMemory],
     ["Generate one review-ready draft", hasDraft || hasLibrary],
     ["Edit, copy, save, approve, or skip the draft", hasLibrary],
-    ["Check Library, Calendar, and Analytics states", hasScheduled],
+    ["Check Library, Calendar, and Progress states", hasScheduled],
   ];
   return `<div class="card workflow-card">
-    <div class="card-head"><div><h3>Recommended test path</h3><p class="muted small">This uses your real workspace data. No preloaded scenario required.</p></div><span class="badge ${hasMemory ? "published" : "draft"}">${hasMemory ? "in progress" : "start here"}</span></div>
+    <div class="card-head"><div><h3>Today’s workflow</h3><p class="muted small">A guided path for testing the current product flow with real workspace data.</p></div><span class="badge ${hasMemory ? "published" : "draft"}">${hasMemory ? "in progress" : "start here"}</span></div>
     <div class="checklist">${items.map(([label, done]) => `<div class="check ${done ? "done" : ""}"><span>${done ? "✓" : "○"}</span>${label}</div>`).join("")}</div>
     <div class="workflow-actions">
       <button class="button" data-tab="bank">${hasMemory ? "Add another memory" : "Add first memory"}</button>
       <button class="button secondary" data-action="sample-draft" ${hasMemory ? "" : "disabled"}>Draft from latest memory</button>
       <button class="button ghost" data-tab="bank">Open Content Bank</button>
     </div>
-    <p class="muted small">Mira can chat, suggest angles, draft, revise, and move posts into Library/Calendar. LinkedIn has a manual copy/open fallback until OAuth is fully connected.</p>
+    <p class="muted small">Mira can chat, suggest angles, draft, revise, and move posts into Library/Calendar. Progress is available from the plus menu. LinkedIn has a manual copy/open fallback until OAuth is fully connected.</p>
   </div>`;
 }
 
@@ -573,6 +649,7 @@ function renderBank() {
     <p class="lead">Capture one useful moment in under a minute. Then keep it useful: edit, mark used, raise priority, or turn it into a draft.</p>
     ${ui.notice ? `<div class="notice">${escapeHtml(ui.notice)}</div>` : ""}
     ${bankSummary()}
+    ${dailyCheckinPrompts()}
     <div class="card">
       <h3>What happened today?</h3>
       <p class="muted small">Good entries are concrete: who/what happened, why it mattered, and what it changed in your thinking.</p>
@@ -583,6 +660,14 @@ function renderBank() {
       ${ui.state.content_bank.length ? ui.state.content_bank.map(memoryCard).join("") : '<div class="empty">Your Content Bank is empty. Add the first moment above.</div>'}
     </div>
   </section>`;
+}
+
+function dailyCheckinPrompts() {
+  return `<div class="checkin-prompts">
+    <div class="checkin-prompt"><span>01</span><strong>What happened?</strong><p>Name the real meeting, decision, event, or constraint.</p></div>
+    <div class="checkin-prompt"><span>02</span><strong>Why did it matter?</strong><p>Capture the founder lesson, tension, or change in thinking.</p></div>
+    <div class="checkin-prompt"><span>03</span><strong>Could this be a post?</strong><p>Mark strong entries high-potential and draft from them later.</p></div>
+  </div>`;
 }
 
 function bankSummary() {
