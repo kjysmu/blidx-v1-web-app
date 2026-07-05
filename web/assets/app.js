@@ -328,40 +328,107 @@ function scrollChatIfRequested() {
 
 function renderOnboarding() {
   const p = ui.state.profile || {};
+  const selectedContentTypes = p.content_types?.length ? p.content_types : ["Industry insights", "Personal stories", "Lessons learned"];
   return `<section class="page onboarding-page">
-    <div class="eyebrow">Workspace setup</div>
-    <h1>Set up Mira’s context.</h1>
-    <p class="lead">This questionnaire gives Mira the minimum context needed before a tester starts drafting: founder identity, audience, voice, and one real Content Bank memory.</p>
-    <div class="onboarding-steps">
-      <div><strong>1</strong><span>Founder + company</span></div>
-      <div><strong>2</strong><span>Audience + content goals</span></div>
-      <div><strong>3</strong><span>Voice + writing examples</span></div>
-      <div><strong>4</strong><span>First Content Bank memory</span></div>
+    <div class="onboarding-hero">
+      <div>
+        <div class="eyebrow">Mira setup questionnaire</div>
+        <h1>Teach Mira who you are before she drafts.</h1>
+        <p class="lead">This setup mirrors the product flow more closely: profile, audience, voice, goals, and one real work moment. The better this context is, the less Mira sounds like a generic chatbot.</p>
+      </div>
+      <div class="onboarding-score-card">
+        <strong>Mira readiness</strong>
+        <span>Profile</span>
+        <span>Audience</span>
+        <span>Voice</span>
+        <span>First memory</span>
+      </div>
     </div>
-    <form class="card form-grid onboarding-form" id="onboarding-form">
-      ${field("First name", "first_name", p.first_name || accountLabel())}
-      ${field("Role", "role", p.role || "Founder")}
-      ${field("Company", "company_name", p.company_name || "")}
-      ${field("Website", "company_website", p.company_website || "")}
-      ${field("Industry", "industry", p.industry || "")}
-      ${field("Company description", "company_description", p.company_description || "", true)}
-      ${field("Audience (comma separated)", "audience", (p.audience || ["Founders", "Industry Peers"]).join(", "), true)}
-      ${field("Expertise (comma separated)", "expertise", (p.expertise || []).join(", "), true)}
-      <div class="field"><label>Posting frequency</label><select name="posting_frequency"><option value="1-2x_per_week">1–2× per week</option><option value="3-4x_per_week" selected>3–4× per week</option><option value="5+_per_week">5+ per week</option></select></div>
-      <div class="field"><label>Tone</label><select name="tone"><option>Insightful & measured</option><option>Bold & opinionated</option><option>Warm & personal</option><option>Data-driven & practical</option></select></div>
-      ${field("Writing style notes", "writing_style", p.writing_style || "Reflective, specific, founder-led, and practical.", true)}
-      ${textAreaField("Writing samples", "writing_samples", (p.writing_samples || []).join("\n\n---\n\n"), "Paste 1-3 LinkedIn posts or writing examples. Separate samples with ---.", true)}
-      ${field("Preferred structure", "preferred_structure", p.preferred_structure || "Hook, real moment, lesson, question", true)}
-      ${field("Phrases to avoid", "avoided_phrases", (p.avoided_phrases || []).join(", "), true)}
-      ${field("CTA style", "cta_style", p.cta_style || "Reflective question", true)}
-      <div class="field full"><label>First Content Bank memory</label><textarea name="first_memory" placeholder="Example: This week I spoke with a founder who said content feels hard because the real work is scattered across notes, calls, and decisions." required minlength="3"></textarea><p class="field-help">This is required for the first setup so Mira does not start from an empty shell.</p></div>
-      <div class="field full onboarding-actions"><button class="button">Complete setup</button><button type="button" class="button ghost" id="skip-onboarding">Use starter context for now</button></div>
+    <div class="onboarding-steps">
+      <div><strong>1</strong><span>Founder identity</span></div>
+      <div><strong>2</strong><span>Company context</span></div>
+      <div><strong>3</strong><span>Audience + goals</span></div>
+      <div><strong>4</strong><span>Voice training</span></div>
+      <div><strong>5</strong><span>First memory</span></div>
+    </div>
+    <form class="onboarding-form" id="onboarding-form">
+      <section class="card onboarding-section">
+        <div class="onboarding-section-head"><span>01</span><div><h3>Founder identity</h3><p>How Mira should understand and address you.</p></div></div>
+        <div class="form-grid">
+          ${field("First name", "first_name", p.first_name || accountLabel())}
+          ${field("Role", "role", p.role || "Founder")}
+        </div>
+      </section>
+      <section class="card onboarding-section">
+        <div class="onboarding-section-head"><span>02</span><div><h3>Company context</h3><p>This replaces generic topic prompts with your actual world.</p></div></div>
+        <div class="form-grid">
+          ${field("Company", "company_name", p.company_name || "")}
+          ${field("Website", "company_website", p.company_website || "")}
+          ${field("Industry", "industry", p.industry || "")}
+          ${field("Expertise (comma separated)", "expertise", (p.expertise || []).join(", "))}
+          ${textAreaField("What are you building?", "company_description", p.company_description || "", "Example: We help founders turn scattered work moments into credible LinkedIn content.", true)}
+        </div>
+      </section>
+      <section class="card onboarding-section">
+        <div class="onboarding-section-head"><span>03</span><div><h3>Audience + content goals</h3><p>Choose who the content is for and what rhythm Mira should support.</p></div></div>
+        <div class="field full">
+          <label>Primary audience (max 3, comma separated)</label>
+          <input class="input" name="audience" id="onboarding-audience" value="${escapeHtml((p.audience || ["Founders", "Industry Peers"]).join(", "))}" />
+          <div class="choice-row">
+            ${choiceChip("audience", "Investors / VCs")}
+            ${choiceChip("audience", "Industry Peers")}
+            ${choiceChip("audience", "Customers")}
+            ${choiceChip("audience", "Talent / Future Hires")}
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Posting frequency</label><select name="posting_frequency"><option value="1-2x_per_week" ${(p.posting_frequency || "3-4x_per_week") === "1-2x_per_week" ? "selected" : ""}>1-2x per week</option><option value="3-4x_per_week" ${(p.posting_frequency || "3-4x_per_week") === "3-4x_per_week" ? "selected" : ""}>3-4x per week</option><option value="5+_per_week" ${(p.posting_frequency || "3-4x_per_week") === "5+_per_week" ? "selected" : ""}>5+ per week</option></select></div>
+          <div class="field"><label>Tone</label><select name="tone"><option ${(p.tone || "Insightful & measured") === "Insightful & measured" ? "selected" : ""}>Insightful & measured</option><option ${(p.tone || "") === "Bold & opinionated" ? "selected" : ""}>Bold & opinionated</option><option ${(p.tone || "") === "Warm & personal" ? "selected" : ""}>Warm & personal</option><option ${(p.tone || "") === "Data-driven & practical" ? "selected" : ""}>Data-driven & practical</option></select></div>
+        </div>
+        <input type="hidden" name="content_types" id="onboarding-content-types" value="${escapeHtml(selectedContentTypes.join(", "))}" />
+        <div class="choice-row content-type-row">
+          ${choiceChip("content", "Industry insights", selectedContentTypes.includes("Industry insights"))}
+          ${choiceChip("content", "Personal stories", selectedContentTypes.includes("Personal stories"))}
+          ${choiceChip("content", "Lessons learned", selectedContentTypes.includes("Lessons learned"))}
+          ${choiceChip("content", "Case studies", selectedContentTypes.includes("Case studies"))}
+        </div>
+      </section>
+      <section class="card onboarding-section">
+        <div class="onboarding-section-head"><span>04</span><div><h3>Voice training</h3><p>Writing samples are the strongest signal for making Mira sound less AI-generated.</p></div></div>
+        <div class="form-grid">
+          ${textAreaField("LinkedIn About / voice notes", "writing_style", p.writing_style || "Reflective, specific, founder-led, and practical.", "Paste your LinkedIn About section or describe your writing voice.", true)}
+          ${textAreaField("Writing samples", "writing_samples", (p.writing_samples || []).join("\n\n---\n\n"), "Paste 1-3 LinkedIn posts you wrote or admire. Separate samples with ---.", true)}
+          ${field("Preferred structure", "preferred_structure", p.preferred_structure || "Hook, real moment, lesson, reflective question", true)}
+          ${field("Phrases to avoid", "avoided_phrases", (p.avoided_phrases || []).join(", "), true)}
+          ${field("CTA style", "cta_style", p.cta_style || "Reflective question", true)}
+        </div>
+      </section>
+      <section class="card onboarding-section">
+        <div class="onboarding-section-head"><span>05</span><div><h3>First Content Bank memory</h3><p>Mira should start from one real moment, not an empty shell.</p></div></div>
+        <div class="memory-prompts">
+          <div><strong>What happened?</strong><span>A call, event, decision, launch, or lesson.</span></div>
+          <div><strong>Why did it matter?</strong><span>What changed in your thinking?</span></div>
+          <div><strong>Who should hear it?</strong><span>Which audience would care?</span></div>
+        </div>
+        <div class="field full"><label>First memory</label><textarea name="first_memory" placeholder="Example: This week I spoke with a founder who said content feels hard because the real work is scattered across notes, calls, and decisions." required minlength="3"></textarea><p class="field-help">This becomes the first Content Bank entry and gives Mira something real to reference immediately.</p></div>
+      </section>
+      <div class="card onboarding-submit">
+        <div><strong>Ready to enter the workspace?</strong><p class="muted small">You can edit all of this later in Settings. For now, this gives Mira enough context to start behaving like a content partner.</p></div>
+        <div class="onboarding-actions"><button class="button">Complete setup</button><button type="button" class="button ghost" id="skip-onboarding">Use starter context for now</button></div>
+      </div>
     </form>
   </section>`;
 }
 
+function choiceChip(type, value, active = false) {
+  return `<button class="choice-chip ${active ? "active" : ""}" type="button" data-onboarding-chip="${type}" data-value="${escapeHtml(value)}">${escapeHtml(value)}</button>`;
+}
+
 function bindOnboarding() {
   document.querySelector("#onboarding-form")?.addEventListener("submit", completeOnboarding);
+  document.querySelectorAll("[data-onboarding-chip]").forEach((button) => {
+    button.onclick = () => handleOnboardingChip(button.dataset.onboardingChip, button.dataset.value, button);
+  });
   document.querySelector("#skip-onboarding")?.addEventListener("click", async () => {
     const p = ui.state.profile;
     await api("/api/onboarding/complete", {
@@ -389,6 +456,35 @@ function bindOnboarding() {
     await refresh();
     showToast("Setup skipped. You can edit Settings anytime.");
   });
+}
+
+function handleOnboardingChip(type, value, button) {
+  if (!value) return;
+  if (type === "audience") {
+    const input = document.querySelector("#onboarding-audience");
+    if (!input) return;
+    const values = input.value.split(",").map((item) => item.trim()).filter(Boolean);
+    if (!values.some((item) => item.toLowerCase() === value.toLowerCase()) && values.length < 3) {
+      values.push(value);
+    }
+    input.value = values.slice(0, 3).join(", ");
+    input.focus();
+    return;
+  }
+  if (type === "content") {
+    const input = document.querySelector("#onboarding-content-types");
+    if (!input) return;
+    const values = input.value.split(",").map((item) => item.trim()).filter(Boolean);
+    const index = values.findIndex((item) => item.toLowerCase() === value.toLowerCase());
+    if (index >= 0) {
+      values.splice(index, 1);
+      button.classList.remove("active");
+    } else {
+      values.push(value);
+      button.classList.add("active");
+    }
+    input.value = values.join(", ");
+  }
 }
 
 function renderChat() {
@@ -1066,9 +1162,10 @@ async function completeOnboarding(event) {
   const payload = Object.fromEntries(form.entries());
   payload.audience = payload.audience.split(",").map((v) => v.trim()).filter(Boolean);
   payload.expertise = payload.expertise.split(",").map((v) => v.trim()).filter(Boolean);
+  payload.content_types = (payload.content_types || "").split(",").map((v) => v.trim()).filter(Boolean);
   payload.writing_samples = (payload.writing_samples || "").split(/\n\s*---\s*\n/).map((v) => v.trim()).filter(Boolean);
   payload.avoided_phrases = (payload.avoided_phrases || "").split(",").map((v) => v.trim()).filter(Boolean);
-  payload.content_types = ["Industry insights", "Personal stories", "Lessons learned"];
+  if (!payload.content_types.length) payload.content_types = ["Industry insights", "Personal stories", "Lessons learned"];
   try {
     ui.loading = true;
     await api("/api/onboarding/complete", { method: "POST", body: JSON.stringify(payload) });

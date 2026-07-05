@@ -453,11 +453,67 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .auth-card h2 { font-family: "Playfair Display"; font-size: 32px; margin-bottom: 8px; }
 .auth-card form { display: grid; gap: 15px; margin-top: 18px; }
 .auth-switch { width: 100%; margin-top: 10px; }
-.onboarding-page { max-width: 980px; }
-.onboarding-form { margin-top: 22px; }
-.onboarding-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.onboarding-page { max-width: 1020px; }
+.onboarding-hero {
+  display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 18px;
+  align-items: stretch; margin-bottom: 18px;
+}
+.onboarding-score-card {
+  display: grid; gap: 8px; padding: 17px; border: 1px solid #d8d1f4;
+  border-radius: 20px; background: linear-gradient(135deg, #fff, #faf9ff);
+  box-shadow: 0 10px 34px rgba(85,72,184,.07);
+}
+.onboarding-score-card strong { font-size: 15px; }
+.onboarding-score-card span {
+  display: flex; align-items: center; gap: 8px; color: var(--green);
+  font-size: 12px; font-weight: 800;
+}
+.onboarding-score-card span::before {
+  content: "✓"; display: grid; place-items: center; width: 20px; height: 20px;
+  border-radius: 999px; background: var(--green-soft);
+}
+.onboarding-form { display: grid; gap: 16px; margin-top: 22px; }
+.onboarding-section { padding: 0; overflow: hidden; }
+.onboarding-section-head {
+  display: flex; gap: 13px; align-items: flex-start;
+  padding: 18px 20px; border-bottom: 1px solid var(--line);
+  background: linear-gradient(135deg, #fff, #fbfaff);
+}
+.onboarding-section-head > span {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border-radius: 999px; background: var(--purple-soft); color: var(--purple);
+  font-size: 12px; font-weight: 900;
+}
+.onboarding-section-head p { margin: 4px 0 0; color: var(--muted); line-height: 1.45; }
+.onboarding-section > .form-grid,
+.onboarding-section > .field,
+.onboarding-section > .choice-row,
+.onboarding-section > .memory-prompts {
+  margin: 18px 20px;
+}
+.choice-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.choice-chip {
+  border: 1px solid #d8d1f4; border-radius: 999px; background: white;
+  color: var(--muted); padding: 8px 11px; font-size: 12px; font-weight: 800;
+}
+.choice-chip:hover, .choice-chip.active {
+  color: var(--purple); background: var(--purple-soft); border-color: #b8afe8;
+}
+.content-type-row { margin-top: 12px; }
+.memory-prompts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.memory-prompts div {
+  padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: white;
+}
+.memory-prompts strong { display: block; font-size: 13px; }
+.memory-prompts span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.35; }
+.onboarding-submit {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  border-color: #d8d1f4; background: linear-gradient(135deg, #fff, #faf9ff);
+}
+.onboarding-submit p { margin: 5px 0 0; }
+.onboarding-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
 .onboarding-steps {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px;
   margin: 18px 0 6px;
 }
 .onboarding-steps div {
@@ -502,8 +558,19 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .auth-card { border-radius: 18px; }
   .auth-points { margin-top: 18px; }
   .auth-points div { padding: 12px; }
+  .onboarding-hero { grid-template-columns: 1fr; }
+  .onboarding-score-card { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .onboarding-score-card strong { grid-column: 1 / -1; }
+  .onboarding-submit { display: grid; }
   .onboarding-actions { display: grid; }
   .onboarding-steps { grid-template-columns: 1fr; }
+  .onboarding-section > .form-grid,
+  .onboarding-section > .field,
+  .onboarding-section > .choice-row,
+  .onboarding-section > .memory-prompts {
+    margin: 16px;
+  }
+  .memory-prompts { grid-template-columns: 1fr; }
   .grid, .form-grid, .stats-grid, .mira-brief, .checkin-prompts { grid-template-columns: 1fr; }
   .brief-grid { grid-template-columns: 1fr; }
   .checklist { grid-template-columns: 1fr; }
