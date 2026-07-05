@@ -106,7 +106,6 @@ const navItems = [
   ["bank", "▦", "Bank"],
   ["library", "▤", "Library"],
   ["calendar", "□", "Calendar"],
-  ["qa", "✓", "QA"],
   ["settings", "⚙", "Settings"],
 ];
 
@@ -1124,11 +1123,20 @@ function renderQA() {
   const readyCount = checks.filter((item) => item.done).length;
   const posts = ui.state.posts || [];
   const bank = ui.state.content_bank || [];
+  const mockupChecks = [
+    ["Flow 1 · Onboarding", "Partly aligned", "Questionnaire exists; payment and pre-signup localStorage handoff are still deferred."],
+    ["Flow 2 · Draft", "Partly aligned", "Mira chat, angle choice, draft card, edit/save/approve exist; upload document and SSE activity stream are still deferred."],
+    ["Flow 3 · LinkedIn", "Partly aligned", "OAuth helpers and manual fallback exist; final auto-posting depends on LinkedIn Developer redirect/app access."],
+    ["Flow 4 · Check-in / Bank", "Partly aligned", "Daily check-in categories and Content Bank management exist; document/link capture is still MVP-level."],
+    ["Flow 5 · Settings", "Partly aligned", "Profile, AI, database, LinkedIn, and readiness sections exist; exact edit-panel UX is not yet matched."],
+    ["Flows 6-8 · Library/Calendar/Progress", "Partly aligned", "Library, Calendar, Analytics exist; detailed post-performance analytics are still limited."],
+    ["Navigation", "Aligned", "Bottom tabs are Chat, Bank, Library, Calendar, Settings. Plus menu contains Draft, Daily check-in, Progress, and QA."],
+  ];
   const knownLimitations = [
     "LinkedIn auto-posting still depends on LinkedIn Developer redirect/app access. Manual fallback is the reliable test path for now.",
     "Auth is staging-level. Password reset, email verification, account recovery, and production security hardening are not complete yet.",
     "Mira has stronger strategy and framework behavior now, but still needs deeper voice learning from more writing samples.",
-    "The UI is more responsive, but exact mockup parity still needs a dedicated visual comparison pass against the handoff HTML files.",
+    "The UI is more responsive and the navigation now matches the handoff structure, but exact screen-by-screen visual parity is still in progress.",
   ];
   return `<section class="page qa-page" data-testid="qa-page">
     <div class="eyebrow">Test mode</div>
@@ -1163,6 +1171,12 @@ function renderQA() {
     </div>
     <div class="qa-grid">
       ${checks.map(qaFlowCard).join("")}
+    </div>
+    <div class="card qa-mockups">
+      <div class="card-head"><h3>Mockup alignment</h3><span class="badge scheduled">handoff files</span></div>
+      <div class="mockup-list">
+        ${mockupChecks.map(([flow, status, detail]) => `<div class="mockup-row"><div><strong>${escapeHtml(flow)}</strong><p>${escapeHtml(detail)}</p></div><span class="badge ${status === "Aligned" ? "published" : "scheduled"}">${escapeHtml(status)}</span></div>`).join("")}
+      </div>
     </div>
     <div class="card qa-limitations">
       <div class="card-head"><h3>Known limitations</h3><span class="badge scheduled">staging</span></div>

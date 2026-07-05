@@ -647,6 +647,13 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   font-weight: 900; text-transform: uppercase; letter-spacing: .08em;
 }
 .qa-limitations, .qa-feedback { margin-top: 18px; }
+.qa-mockups { margin: 18px 0; }
+.mockup-list { display: grid; gap: 10px; }
+.mockup-row {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: white;
+}
+.mockup-row p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .qa-limitations p { margin: 0 0 10px; color: var(--muted); line-height: 1.5; }
 .qa-limitations p:last-child { margin-bottom: 0; }
 .feedback-template {
@@ -661,7 +668,7 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 @media (max-width: 760px) {
   body { background: #e8e7e3; }
   .shell {
-    display: block; width: min(430px, 100%); min-height: 100dvh;
+    display: block; width: min(375px, 100%); min-height: 100dvh;
     margin: 0 auto; padding-bottom: calc(78px + env(safe-area-inset-bottom)); overflow-x: hidden;
   }
   .sidebar { display: none; }
@@ -738,13 +745,14 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .qa-actions { display: grid; grid-template-columns: 1fr; justify-content: stretch; }
   .qa-grid { grid-template-columns: 1fr; }
   .qa-item .button { width: 100%; }
+  .mockup-row { display: grid; }
   .variant-grid { grid-template-columns: 1fr; }
   .chat-stream { margin-bottom: 150px; gap: 9px; }
   .bubble, .draft-card { scroll-margin-bottom: 185px; }
   .bubble { max-width: 88%; font-size: 14px; padding: 10px 13px; }
   .chat-stream .draft-card { max-width: 100%; margin-left: 0; }
   .composer {
-    left: 50%; transform: translateX(-50%); margin: 0; width: min(430px, 100%);
+    left: 50%; transform: translateX(-50%); margin: 0; width: min(375px, 100%);
     padding: 9px 12px calc(74px + env(safe-area-inset-bottom));
     background: linear-gradient(transparent, var(--paper) 24%);
     z-index: 28;
@@ -798,9 +806,9 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .draft-review-actions { position: static; }
   .prompt-row { display: none; }
   .mobile-nav {
-    position: fixed; display: grid; grid-template-columns: repeat(6, 1fr);
+    position: fixed; display: grid; grid-template-columns: repeat(5, 1fr);
     left: 50%; right: auto; transform: translateX(-50%);
-    bottom: 0; width: min(430px, 100%); height: 68px; z-index: 30;
+    bottom: 0; width: min(375px, 100%); height: 68px; z-index: 30;
     background: rgba(255,255,255,.96); border-top: .5px solid var(--line-soft); backdrop-filter: blur(14px);
   }
   .mobile-nav button { border: 0; background: transparent; color: var(--muted); font-size: 10px; font-weight: 700; }
