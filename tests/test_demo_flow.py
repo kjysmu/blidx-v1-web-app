@@ -307,6 +307,31 @@ def test_mira_fallback_varies_chat_replies_and_offers_angles():
     assert "memory_saved" not in first["actions"]
     assert len(first["state"]["content_bank"]) == 3
     assert "angle" in second["reply"].lower()
+    assert "Strategic read" in second["reply"]
+    assert "Best angle" in second["reply"]
+    assert "Missing detail" in second["reply"]
+
+    client.post("/api/reset")
+
+
+def test_mira_strategy_layer_critiques_ideas_without_drafting():
+    client.post("/api/seed-test-scenario")
+
+    response = client.post(
+        "/api/chat/message",
+        json={"message": "I am thinking about a LinkedIn post on AI trust in healthcare"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["actions"] == ["reply"]
+    assert payload["post"] is None
+    assert payload["state"]["posts"] == []
+    assert "Strategic read" in payload["reply"]
+    assert "Risk:" in payload["reply"]
+    assert "Best angle" in payload["reply"]
+    assert "Best angle for" in payload["reply"]
+    assert "Missing detail" in payload["reply"]
 
     client.post("/api/reset")
 

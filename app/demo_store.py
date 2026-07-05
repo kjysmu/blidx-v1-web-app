@@ -359,7 +359,11 @@ class DemoStore:
                 kind = "message"
                 post_id = None
             else:
-                reply = self._generate_chat_reply(state, content) or self._fallback_chat_reply(state, content)
+                reply = (
+                    self._content_strategy_reply(state, content)
+                    or self._generate_chat_reply(state, content)
+                    or self._fallback_chat_reply(state, content)
+                )
                 actions = ["reply"]
                 kind = "message"
                 post_id = None
@@ -866,6 +870,16 @@ class DemoStore:
     @staticmethod
     def _wants_draft(content: str) -> bool:
         lowered = content.lower()
+        draft_action_signals = (
+            "draft",
+            "write",
+            "create",
+            "make",
+            "turn this into",
+            "post about",
+        )
+        if "linkedin post" in lowered and not any(signal in lowered for signal in draft_action_signals):
+            return False
         conversational_question_signals = (
             "what should",
             "what can",
@@ -1656,6 +1670,9 @@ class DemoStore:
             "Be calm, specific, and editorial. Avoid robotic phrases, hype, and repeated templates. "
             "Do not always use the same structure. Sometimes ask one sharp question; sometimes offer options; "
             "sometimes name the strongest angle directly. Keep replies short enough for a chat screen. "
+            "When the user asks for ideas, angles, or what to post, act like a content strategist first: "
+            "give a strategic read, name why the idea works or does not work, identify audience fit, "
+            "and ask for the missing concrete detail before drafting. "
             "When suggesting angles, format them exactly as '1/ Angle title: one-sentence explanation.' "
             "so the product can offer draft actions. If the user's topic is broad and lacks a real moment, "
             "ask for one concrete detail before drafting. Respect the user's voice controls."
@@ -1673,6 +1690,138 @@ class DemoStore:
             return provider.generate(prompt, system_prompt)
         except (httpx.HTTPError, RuntimeError, ValueError):
             return None
+
+    @staticmethod
+    def _content_strategy_reply(state: dict, content: str) -> str | None:
+        if not DemoStore._wants_content_strategy(content):
+            return None
+
+        profile = state.get("profile", {})
+        memories = state.get("content_bank", [])
+        audience = profile.get("audience") or ["your audience"]
+        audience_label = ", ".join(audience[:3])
+        latest = memories[0].get("raw_text", "") if memories else ""
+        topic = DemoStore._strategy_topic(content, latest)
+        score, label, strengths, risks = DemoStore._strategy_score(topic, latest, audience)
+        best_angle = DemoStore._best_strategy_angle(topic, latest)
+        missing_detail = DemoStore._missing_strategy_detail(topic, latest)
+
+        return (
+            f"Strategic read: {label} ({score}/5).\n\n"
+            f"Why it can work: {strengths}\n\n"
+            f"Risk: {risks}\n\n"
+            f"Best angle for {audience_label}: {best_angle}\n\n"
+            "Three draftable directions:\n\n"
+            f"1/ Specific moment: Lead with the real scene behind “{DemoStore._short_topic(topic)}” and show what changed in your thinking.\n\n"
+            f"2/ Founder POV: Turn it into a sharper opinion about what {audience_label} usually misunderstand.\n\n"
+            "3/ Useful question: End by asking where the workflow, trust, or judgment breaks for the reader.\n\n"
+            f"Missing detail before I draft: {missing_detail}"
+        )
+
+    @staticmethod
+    def _wants_content_strategy(content: str) -> bool:
+        lowered = content.lower()
+        if DemoStore._wants_draft(content):
+            return False
+        strategy_signals = (
+            "what should",
+            "angle",
+            "angles",
+            "idea",
+            "ideas",
+            "suggest",
+            "topic",
+            "topics",
+            "linkedin",
+            "post",
+            "content",
+            "is this good",
+            "should i write",
+        )
+        if any(signal in lowered for signal in strategy_signals):
+            return True
+        return len(content.split()) >= 12 and not content.strip().endswith("?")
+
+    @staticmethod
+    def _strategy_topic(content: str, latest: str = "") -> str:
+        lowered = content.lower()
+        if latest and any(
+            phrase in lowered
+            for phrase in ("what should", "from my content bank", "from the content bank", "latest memory")
+        ):
+            return latest
+        topic = DemoStore._extract_topic(content)
+        for phrase in (
+            "give me angles from",
+            "give me angles about",
+            "suggest angles from",
+            "suggest angles about",
+            "what should i post about",
+            "what should i post",
+            "post about",
+            "content about",
+        ):
+            if topic.lower().startswith(phrase):
+                topic = topic[len(phrase) :].strip(" :.-")
+                break
+        return topic or latest or content
+
+    @staticmethod
+    def _strategy_score(topic: str, latest: str, audience: list[str]) -> tuple[int, str, str, str]:
+        text = f"{topic} {latest}".lower()
+        score = 1
+        if latest:
+            score += 1
+        if any(word in text for word in ("i ", "we ", "my ", "our ", "founder", "customer", "event", "spoke", "learned", "realized")):
+            score += 1
+        if any(word in text for word in ("but", "versus", "tension", "problem", "hard", "missed", "changed")):
+            score += 1
+        audience_terms = " ".join(audience).lower()
+        if any(term in text for term in audience_terms.split() if len(term) > 4):
+            score += 1
+        score = min(score, 5)
+        if score >= 4:
+            label = "strong"
+            strengths = "it has enough specificity and tension to become more than a generic opinion."
+            risks = "do not over-polish it; keep the real moment visible."
+        elif score >= 3:
+            label = "promising"
+            strengths = "there is a useful angle here, but it needs one concrete detail to feel owned."
+            risks = "without the moment, it may sound like a standard LinkedIn take."
+        else:
+            label = "not ready yet"
+            strengths = "the theme may be relevant, but the content signal is still too abstract."
+            risks = "drafting now would likely produce generic AI-style content."
+        return score, label, strengths, risks
+
+    @staticmethod
+    def _best_strategy_angle(topic: str, latest: str = "") -> str:
+        text = f"{topic} {latest}".lower()
+        if "ai" in text and any(word in text for word in ("health", "mental", "care")):
+            return "focus on where AI reduces friction, and where trust still needs a human relationship."
+        if "ai" in text:
+            return "make the post about judgment, taste, and workflow instead of simply saying AI is useful."
+        if "content" in text or "linkedin" in text:
+            return "show that the real bottleneck is not writing, but capturing founder context at the right moment."
+        if latest:
+            return "open with the lived moment, then name the lesson it revealed."
+        return "turn the broad topic into one specific founder decision, mistake, or observation."
+
+    @staticmethod
+    def _missing_strategy_detail(topic: str, latest: str = "") -> str:
+        text = f"{topic} {latest}".lower()
+        if latest:
+            return "what exactly changed in your thinking after this happened?"
+        if "event" in text:
+            return "what was one moment from the event that surprised you?"
+        if "ai" in text:
+            return "what did you personally see, build, test, or question around AI?"
+        return "what happened in real life that made this topic feel relevant today?"
+
+    @staticmethod
+    def _short_topic(topic: str) -> str:
+        cleaned = DemoStore._clean_topic(topic).strip()
+        return cleaned[:90] + ("..." if len(cleaned) > 90 else "")
 
     @staticmethod
     def _fallback_chat_reply(state: dict, content: str) -> str:
