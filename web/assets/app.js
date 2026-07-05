@@ -461,16 +461,18 @@ function chatTimeline(messages, drafts) {
   const draftById = new Map(drafts.map((draft) => [draft.id, draft]));
   const renderedDraftIds = new Set();
   const items = [];
+  let order = 0;
 
   messages.forEach((message) => {
     const messageTime = timeValue(message.created_at);
-    items.push({ type: "message", time: messageTime, html: messageBubble(message) });
+    items.push({ type: "message", time: messageTime, order: order++, html: messageBubble(message) });
     const linkedDraft = message.post_id ? draftById.get(message.post_id) : null;
     if (linkedDraft) {
       renderedDraftIds.add(linkedDraft.id);
       items.push({
         type: "draft",
-        time: messageTime + 1,
+        time: messageTime,
+        order: order++,
         html: draftCard(linkedDraft, true),
       });
     }
@@ -478,11 +480,11 @@ function chatTimeline(messages, drafts) {
 
   drafts.forEach((draft) => {
     if (renderedDraftIds.has(draft.id)) return;
-    items.push({ type: "draft", time: timeValue(draft.created_at), html: draftCard(draft, true) });
+    items.push({ type: "draft", time: timeValue(draft.created_at), order: order++, html: draftCard(draft, true) });
   });
 
   return items
-    .sort((a, b) => a.time - b.time || (a.type === "message" ? -1 : 1))
+    .sort((a, b) => a.time - b.time || a.order - b.order)
     .map((item) => item.html)
     .join("");
 }
@@ -1093,6 +1095,7 @@ async function submitPrompt(message) {
     id: `pending-${Date.now()}`,
     role: "user",
     content: message,
+    created_at: new Date().toISOString(),
     kind: "pending",
   }];
   requestChatScroll();
