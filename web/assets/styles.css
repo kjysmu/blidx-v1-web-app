@@ -254,7 +254,7 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .variant-preview { color: var(--ink); font-size: 12px; line-height: 1.45; }
 .draft-actions { padding: 15px 18px; display: flex; gap: 9px; flex-wrap: wrap; border-top: 1px solid var(--line); }
 .badge { display: inline-flex; align-items: center; padding: 5px 9px; border-radius: 99px; font-size: 11px; font-weight: 700; text-transform: capitalize; }
-.badge.pending, .badge.draft { color: var(--purple); background: var(--purple-soft); }
+.badge.pending, .badge.draft, .badge.saved { color: var(--purple); background: var(--purple-soft); }
 .badge.scheduled { color: #365f9b; background: var(--blue-soft); }
 .badge.published { color: var(--green); background: var(--green-soft); }
 .badge.deleted { color: var(--danger); background: #fff1f1; }

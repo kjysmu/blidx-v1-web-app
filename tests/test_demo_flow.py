@@ -228,6 +228,24 @@ def test_publish_uses_manual_fallback_without_linkedin_token():
     client.post("/api/reset")
 
 
+def test_save_draft_uses_saved_status_for_library_filter():
+    client.post("/api/reset")
+    draft = client.post(
+        "/api/drafts",
+        json={"topic": "why founder content needs workflow ownership"},
+    ).json()
+
+    response = client.post(f"/api/drafts/{draft['id']}/save")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "saved"
+
+    state = client.get("/api/state").json()
+    assert state["posts"][0]["status"] == "saved"
+
+    client.post("/api/reset")
+
+
 def test_mira_fallback_varies_chat_replies_and_offers_angles():
     client.post("/api/seed-test-scenario")
 

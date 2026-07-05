@@ -630,7 +630,7 @@ class DemoStore:
             return self._public_state(state)["linkedin"]
 
     def save_post(self, post_id: str) -> dict | None:
-        return self._set_status(post_id, "draft")
+        return self._set_status(post_id, "saved")
 
     def delete_post(self, post_id: str) -> dict | None:
         return self._set_status(post_id, "deleted")

@@ -684,8 +684,8 @@ function libraryFilterCount(filter) {
 function libraryPostsForFilter(filter) {
   const posts = ui.state.posts || [];
   if (filter === "all") return posts.filter((post) => post.status !== "deleted");
-  if (filter === "draft") return posts.filter((post) => ["pending", "draft"].includes(post.status));
-  if (filter === "saved") return posts.filter((post) => post.status === "saved");
+  if (filter === "draft") return posts.filter((post) => post.status === "pending");
+  if (filter === "saved") return posts.filter((post) => ["saved", "draft"].includes(post.status));
   if (filter === "scheduled") return posts.filter((post) => post.status === "scheduled");
   if (filter === "published") return posts.filter((post) => post.status === "published");
   if (filter === "skipped") return posts.filter((post) => post.status === "deleted");
@@ -718,7 +718,7 @@ function libraryItem(post) {
     ${qualityReviewPanel(post, true)}
     <div class="inline-actions">
       <button class="button" data-draft-review="${post.id}">Open draft workspace</button>
-      ${post.status === "pending" || post.status === "draft" ? `<button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button><button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>` : ""}
+      ${["pending", "draft", "saved"].includes(post.status) ? `<button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button><button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>` : ""}
       <button class="button ghost" data-draft-action="copy" data-id="${post.id}">Copy</button>
       ${post.status !== "published" ? `<button class="button secondary" data-draft-action="linkedin" data-id="${post.id}">${ui.integrations?.linkedin?.connected ? "Publish to LinkedIn" : "Copy & open LinkedIn"}</button>` : ""}
     </div>
