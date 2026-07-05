@@ -503,6 +503,7 @@ function renderChat() {
       <div class="eyebrow">Your content workdesk</div>
       <h1>Good ${new Date().getHours() < 12 ? "morning" : "afternoon"}, ${escapeHtml(profile.first_name)}.</h1>
       <p class="lead">Mira now follows a clearer content workflow: capture a real moment, choose an angle, then create a review-ready LinkedIn draft.</p>
+      ${workflowProgress()}
       ${miraBrief()}
       ${workflowGuide()}
       <div class="grid">
@@ -528,6 +529,26 @@ function renderChat() {
         </div>
       </div>
     </section>`;
+}
+
+function workflowProgress() {
+  const hasMemory = ui.state.content_bank.length > 0;
+  const hasDraft = ui.state.posts.some((post) => post.status === "pending");
+  const hasReviewed = ui.state.posts.some((post) => ["saved", "scheduled", "published"].includes(post.status));
+  const hasMoved = ui.state.posts.some((post) => ["scheduled", "published"].includes(post.status));
+  const steps = [
+    ["Capture", "Real moment", hasMemory],
+    ["Angle", "Choose POV", hasMemory && (hasDraft || hasReviewed)],
+    ["Draft", "Review card", hasDraft || hasReviewed],
+    ["Move", "Library/LinkedIn", hasMoved],
+  ];
+  return `<div class="flow-strip" aria-label="Blidx workflow progress">
+    ${steps.map(([label, detail, done], index) => `<div class="flow-step ${done ? "done" : ""}">
+      <span>${done ? "✓" : index + 1}</span>
+      <strong>${label}</strong>
+      <small>${detail}</small>
+    </div>`).join("")}
+  </div>`;
 }
 
 function miraBrief() {

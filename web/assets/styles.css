@@ -1,18 +1,25 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700;800&display=swap");
 
 :root {
-  --ink: #202025;
-  --muted: #77747f;
-  --line: #e8e5df;
-  --paper: #fbfaf7;
+  --ink: #1a1a1a;
+  --muted: #6b6b6b;
+  --faint: #9b9b9b;
+  --line: #e2e1db;
+  --line-soft: #f0efe9;
+  --paper: #faf9f7;
+  --paper-2: #f5f4f0;
+  --paper-3: #edecea;
   --card: #ffffff;
-  --purple: #5548b8;
-  --purple-soft: #eeeafe;
+  --purple: #534ab7;
+  --purple-soft: #eeedfe;
+  --purple-mid: #afa9ec;
+  --purple-dark: #3c3489;
   --green: #237a57;
   --green-soft: #e7f5ed;
   --blue-soft: #eaf1ff;
   --danger: #b43e3e;
-  --shadow: 0 18px 60px rgba(40, 35, 65, 0.1);
+  --shadow: 0 2px 8px rgba(0,0,0,.06);
+  --deep-shadow: 0 18px 60px rgba(40, 35, 65, 0.1);
 }
 
 * { box-sizing: border-box; }
@@ -21,12 +28,10 @@ body {
   margin: 0;
   min-height: 100vh;
   color: var(--ink);
-  background:
-    radial-gradient(circle at 15% 10%, rgba(121, 105, 214, .14), transparent 30%),
-    radial-gradient(circle at 85% 90%, rgba(73, 155, 116, .11), transparent 32%),
-    var(--paper);
-  font-family: "DM Sans", sans-serif;
+  background: #e8e7e3;
+  font-family: "Outfit", sans-serif;
   overflow-x: hidden;
+  line-height: 1.5;
 }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
@@ -37,7 +42,8 @@ button { cursor: pointer; }
   margin: 0 auto;
   display: grid;
   grid-template-columns: 236px minmax(0, 1fr);
-  background: rgba(251, 250, 247, .86);
+  background: var(--paper);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.03);
 }
 .sidebar {
   position: sticky;
@@ -53,14 +59,14 @@ button { cursor: pointer; }
   align-items: center;
   gap: 11px;
   margin: 0 8px 36px;
-  font-family: "Playfair Display", serif;
+  font-family: "DM Serif Display", serif;
   font-size: 24px;
 }
 .brand-mark {
   width: 34px; height: 34px; border-radius: 11px;
   display: grid; place-items: center;
   color: white; background: var(--purple);
-  font-family: "DM Sans"; font-weight: 700;
+  font-family: "Outfit"; font-weight: 700;
 }
 .nav { display: grid; gap: 8px; }
 .nav button {
@@ -80,16 +86,16 @@ button { cursor: pointer; }
 .side-note strong { display: block; color: var(--ink); margin-bottom: 3px; }
 .main { min-width: 0; overflow-x: hidden; }
 .topbar {
-  height: 78px; padding: 0 34px;
+  height: 64px; padding: 0 24px;
   display: flex; align-items: center; justify-content: space-between;
   border-bottom: 1px solid var(--line); background: rgba(251,250,247,.72);
   backdrop-filter: blur(16px); position: sticky; top: 0; z-index: 10;
 }
 .mira-id { display: flex; align-items: center; gap: 11px; }
 .avatar {
-  width: 39px; height: 39px; border-radius: 50%;
+  width: 38px; height: 38px; border-radius: 50%;
   display: grid; place-items: center; background: #24222a; color: white;
-  font-family: "Playfair Display"; font-size: 18px;
+  font-family: "DM Serif Display"; font-size: 18px;
 }
 .mira-name { font-weight: 700; }
 .online { color: var(--green); font-size: 12px; }
@@ -131,8 +137,28 @@ button { cursor: pointer; }
 .page { padding: 34px; max-width: 900px; margin: 0 auto; }
 .eyebrow { color: var(--purple); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; }
 h1, h2, h3 { margin: 0; }
-h1 { margin-top: 7px; font-family: "Playfair Display"; font-size: clamp(30px, 5vw, 48px); line-height: 1.05; }
+h1 { margin-top: 7px; font-family: "DM Serif Display"; font-size: clamp(30px, 5vw, 48px); line-height: 1.05; font-weight: 400; }
 .lead { color: var(--muted); line-height: 1.7; margin: 12px 0 26px; max-width: 620px; }
+.flow-strip {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px;
+  margin: -6px 0 18px; padding: 8px;
+  border: 1px solid var(--line-soft); border-radius: 18px;
+  background: rgba(255,255,255,.72);
+}
+.flow-step {
+  display: grid; grid-template-columns: auto 1fr; column-gap: 8px; row-gap: 1px;
+  align-items: center; padding: 10px; border-radius: 13px;
+  color: var(--muted); background: transparent;
+}
+.flow-step span {
+  grid-row: span 2; width: 26px; height: 26px; border-radius: 999px;
+  display: grid; place-items: center; background: var(--paper-2);
+  color: var(--faint); font-size: 12px; font-weight: 800;
+}
+.flow-step strong { font-size: 13px; color: var(--ink); }
+.flow-step small { font-size: 11px; color: var(--faint); }
+.flow-step.done { background: var(--purple-soft); }
+.flow-step.done span { background: var(--purple); color: white; }
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .card {
   background: var(--card); border: 1px solid var(--line); border-radius: 18px;
@@ -186,7 +212,7 @@ h1 { margin-top: 7px; font-family: "Playfair Display"; font-size: clamp(30px, 5v
 .workflow-actions { display: flex; gap: 9px; flex-wrap: wrap; margin-bottom: 10px; }
 .card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
 .card h3 { font-size: 16px; }
-.metric { font-size: 34px; font-family: "Playfair Display"; font-weight: 700; }
+.metric { font-size: 34px; font-family: "DM Serif Display"; font-weight: 400; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 .progress { height: 9px; border-radius: 99px; overflow: hidden; background: #eeeaf4; margin: 12px 0 8px; }
@@ -208,10 +234,11 @@ h1 { margin-top: 7px; font-family: "Playfair Display"; font-size: clamp(30px, 5v
 }
 .input:focus, textarea:focus, select:focus { border-color: #9b91dd; box-shadow: 0 0 0 3px var(--purple-soft); }
 textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
-.chat-stream { display: grid; gap: 16px; margin-bottom: 170px; }
+.chat-stream { display: grid; gap: 10px; margin-bottom: 170px; }
 .bubble {
-  max-width: 680px; padding: 14px 16px; border-radius: 16px;
-  background: white; border: 1px solid var(--line); line-height: 1.6;
+  max-width: min(680px, 82%); padding: 12px 14px; border-radius: 18px;
+  background: white; border: 0.5px solid var(--line-soft); line-height: 1.6;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
   scroll-margin-bottom: 190px;
 }
 .markdown p { margin: 0 0 12px; }
@@ -227,8 +254,11 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .bubble.mira { border-top-left-radius: 5px; }
 .bubble.user {
   justify-self: end; border-top-right-radius: 5px;
-  background: #f5f2ff; border-color: #d7cff5;
+  background: var(--purple); border-color: var(--purple);
+  color: white;
 }
+.bubble.user .markdown,
+.bubble.user strong { color: white; }
 .bubble.typing { color: var(--muted); }
 .angle-actions {
   display: grid; gap: 8px; margin-top: 14px; padding-top: 13px;
@@ -253,8 +283,8 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   background: linear-gradient(transparent, var(--paper) 20%);
 }
 .composer-box {
-  display: flex; gap: 10px; padding: 8px; border: 1px solid var(--line);
-  border-radius: 16px; background: white; box-shadow: var(--shadow);
+  display: flex; gap: 10px; padding: 7px; border: 0.5px solid var(--line);
+  border-radius: 22px; background: white; box-shadow: var(--deep-shadow);
 }
 .composer-box input { border: 0; box-shadow: none; }
 .prompt-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
@@ -270,8 +300,9 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   color: var(--muted); padding: 7px 10px; font-size: 12px; font-weight: 700;
 }
 .prompt-chip:hover { color: var(--purple); border-color: #b8afe8; background: var(--purple-soft); }
-.draft-card { background: white; border: 1px solid #dcd7f3; border-radius: 18px; overflow: hidden; box-shadow: var(--shadow); scroll-margin-bottom: 190px; }
-.draft-card.compact { box-shadow: none; border-style: dashed; }
+.draft-card { background: white; border: 0.5px solid var(--line); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow); scroll-margin-bottom: 190px; }
+.chat-stream .draft-card { max-width: min(760px, calc(100% - 35px)); margin-left: 35px; }
+.draft-card.compact { box-shadow: var(--shadow); border-style: solid; }
 .draft-meta { padding: 13px 18px; display: flex; justify-content: space-between; background: #faf9ff; color: var(--muted); font-size: 12px; }
 .draft-content { padding: 22px; line-height: 1.62; }
 .draft-summary {
@@ -475,7 +506,7 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   padding: 26px; background: white; border: 1px solid var(--line);
   border-radius: 24px; box-shadow: var(--shadow);
 }
-.auth-card h2 { font-family: "Playfair Display"; font-size: 32px; margin-bottom: 8px; }
+.auth-card h2 { font-family: "DM Serif Display"; font-size: 32px; font-weight: 400; margin-bottom: 8px; }
 .auth-card form { display: grid; gap: 15px; margin-top: 18px; }
 .auth-switch { width: 100%; margin-top: 10px; }
 .onboarding-page { max-width: 1020px; }
@@ -566,9 +597,17 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .readiness-item.done { border-color: #b9dfca; background: var(--green-soft); }
 
 @media (max-width: 760px) {
-  .shell { display: block; padding-bottom: 72px; }
+  body { background: #e8e7e3; }
+  .shell {
+    display: block; width: min(430px, 100%); min-height: 100dvh;
+    margin: 0 auto; padding-bottom: 72px; overflow-x: hidden;
+  }
   .sidebar { display: none; }
-  .topbar { height: 66px; padding: 0 18px; }
+  .topbar {
+    height: 58px; padding: 0 14px;
+    background: white; border-bottom: .5px solid var(--line-soft);
+  }
+  .avatar { width: 36px; height: 36px; }
   .mira-name { font-size: 14px; }
   .online { font-size: 11px; }
   .account-pill { display: none; }
@@ -576,10 +615,19 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .top-actions .icon-button { padding: 0 9px; font-size: 12px; }
   .top-actions .primary-quick { font-size: 17px; }
   .quick-actions-menu { position: fixed; right: 14px; top: 72px; }
-  .page { padding: 24px 16px; max-width: 100%; }
-  h1 { font-size: clamp(28px, 9vw, 38px); }
-  .lead { margin-bottom: 20px; }
-  .card { padding: 16px; border-radius: 16px; }
+  .page { padding: 20px 14px; max-width: 100%; }
+  h1 { font-size: clamp(26px, 8vw, 34px); }
+  .lead { margin-bottom: 18px; font-size: 14px; line-height: 1.55; }
+  .flow-strip {
+    grid-template-columns: repeat(4, minmax(72px, 1fr));
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    padding: 6px; margin-bottom: 14px;
+  }
+  .flow-step { min-width: 76px; grid-template-columns: 1fr; gap: 4px; text-align: center; padding: 9px 6px; }
+  .flow-step span { grid-row: auto; margin: 0 auto; }
+  .flow-step strong { font-size: 12px; }
+  .flow-step small { font-size: 10px; }
+  .card { padding: 15px; border-radius: 16px; box-shadow: var(--shadow); }
   .workflow-card, .mira-brief { padding: 15px; }
   .next-action { display: grid; gap: 5px; }
   .next-action strong { white-space: normal; }
@@ -614,13 +662,23 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .library-tools { grid-template-columns: 1fr; }
   .readiness-grid { grid-template-columns: 1fr; }
   .variant-grid { grid-template-columns: 1fr; }
-  .chat-stream { margin-bottom: 210px; }
+  .chat-stream { margin-bottom: 190px; gap: 8px; }
   .bubble, .draft-card { scroll-margin-bottom: 230px; }
-  .bubble { max-width: 100%; }
-  .composer { left: 0; margin: 0; width: 100%; padding: 14px 12px calc(82px + env(safe-area-inset-bottom)); }
-  .composer-box { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; }
-  .composer-box input { min-width: 0; font-size: 16px; }
-  .composer-box .button { padding: 10px 12px; }
+  .bubble { max-width: 82%; font-size: 14px; padding: 10px 14px; }
+  .chat-stream .draft-card { max-width: calc(100% - 35px); margin-left: 35px; }
+  .composer {
+    left: 50%; transform: translateX(-50%); margin: 0; width: min(430px, 100%);
+    padding: 8px 12px calc(76px + env(safe-area-inset-bottom));
+    background: linear-gradient(transparent, var(--paper) 18%);
+  }
+  .composer-box {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center; border-radius: 24px; padding: 6px;
+    box-shadow: 0 -4px 24px rgba(0,0,0,.08);
+  }
+  .composer-box input { min-width: 0; font-size: 16px; background: var(--paper-2); border-radius: 20px; }
+  .composer-box .button { width: 44px; min-width: 44px; height: 40px; padding: 0; border-radius: 999px; font-size: 0; }
+  .composer-box .button::after { content: "→"; font-size: 18px; line-height: 1; }
   .current-draft-shortcut { display: grid; align-items: start; }
   .list-top, .draft-summary, .quality-head, .draft-meta {
     display: grid; grid-template-columns: 1fr; gap: 9px;
@@ -643,8 +701,9 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .prompt-row { display: none; }
   .mobile-nav {
     position: fixed; display: grid; grid-template-columns: repeat(5, 1fr);
-    left: 0; right: 0; bottom: 0; height: 68px; z-index: 30;
-    background: rgba(255,255,255,.94); border-top: 1px solid var(--line); backdrop-filter: blur(14px);
+    left: 50%; right: auto; transform: translateX(-50%);
+    bottom: 0; width: min(430px, 100%); height: 68px; z-index: 30;
+    background: rgba(255,255,255,.96); border-top: .5px solid var(--line-soft); backdrop-filter: blur(14px);
   }
   .mobile-nav button { border: 0; background: transparent; color: var(--muted); font-size: 10px; font-weight: 700; }
   .mobile-nav button span { display: block; font-size: 18px; margin-bottom: 3px; }
