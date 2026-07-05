@@ -171,6 +171,15 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     calendar_page.wait_for()
     calendar_page.get_by_text("Best time this week").first.wait_for()
 
+    page.locator('[data-tab="settings"]').first.click()
+    settings_page = page.locator('[data-testid="settings-page"]')
+    settings_page.wait_for()
+    settings_page.get_by_text("Your Profile", exact=True).wait_for()
+    settings_page.get_by_text("LinkedIn", exact=True).first.wait_for()
+    settings_page.get_by_text("Notifications", exact=True).wait_for()
+    settings_page.get_by_text("Account", exact=True).wait_for()
+    settings_page.get_by_text("Edit Mira profile details").wait_for()
+
     page.locator('[data-action="quick-actions"]').click()
     page.locator('[data-action="qa-status"]').click()
     qa_page = page.locator('[data-testid="qa-page"]')

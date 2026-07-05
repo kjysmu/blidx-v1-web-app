@@ -1128,7 +1128,7 @@ function renderQA() {
     ["Flow 2 · Draft", "Partly aligned", "Mira chat, angle choice, draft card, edit/save/approve exist; upload document and SSE activity stream are still deferred."],
     ["Flow 3 · LinkedIn", "Partly aligned", "OAuth helpers and manual fallback exist; final auto-posting depends on LinkedIn Developer redirect/app access."],
     ["Flow 4 · Check-in / Bank", "Partly aligned", "Daily check-in categories and Content Bank management exist; document/link capture is still MVP-level."],
-    ["Flow 5 · Settings", "Partly aligned", "Profile, AI, database, LinkedIn, and readiness sections exist; exact edit-panel UX is not yet matched."],
+    ["Flow 5 · Settings", "Partly aligned", "Settings now follows the handoff section order; exact bottom-sheet edit panels are still deferred."],
     ["Flows 6-8 · Library/Calendar/Progress", "Partly aligned", "Library, Calendar, Analytics exist; detailed post-performance analytics are still limited."],
     ["Navigation", "Aligned", "Bottom tabs are Chat, Bank, Library, Calendar, Settings. Plus menu contains Draft, Daily check-in, Progress, and QA."],
   ];
@@ -1218,6 +1218,46 @@ function productReadinessPanel() {
   </div>`;
 }
 
+function summarizeList(values = [], fallback = "Not set") {
+  const cleaned = values.filter(Boolean);
+  if (!cleaned.length) return fallback;
+  return cleaned.slice(0, 3).join(", ") + (cleaned.length > 3 ? ` +${cleaned.length - 3}` : "");
+}
+
+function savedStatus(value, savedLabel = "Saved", fallback = "Not set") {
+  if (Array.isArray(value)) return value.length ? savedLabel : fallback;
+  return String(value || "").trim() ? savedLabel : fallback;
+}
+
+function settingsSection(title, rows) {
+  return `<div class="settings-section">
+    <div class="settings-header">${escapeHtml(title)}</div>
+    <div class="settings-group">${rows.join("")}</div>
+  </div>`;
+}
+
+function settingsRow(icon, tone, label, value, action = "Edit") {
+  return `<div class="settings-row">
+    <div class="settings-row-icon ${escapeHtml(tone)}">${escapeHtml(icon)}</div>
+    <div class="settings-row-body">
+      <div class="settings-row-label">${escapeHtml(label)}</div>
+      ${value ? `<div class="settings-row-value">${escapeHtml(value)}</div>` : ""}
+    </div>
+    <div class="settings-row-action">${escapeHtml(action)}</div>
+  </div>`;
+}
+
+function toggleRow(icon, label, value, active = true) {
+  return `<div class="settings-row">
+    <div class="settings-row-icon green">${escapeHtml(icon)}</div>
+    <div class="settings-row-body">
+      <div class="settings-row-label">${escapeHtml(label)}</div>
+      <div class="settings-row-value">${escapeHtml(value)}</div>
+    </div>
+    <div class="toggle ${active ? "on" : ""}" aria-hidden="true"></div>
+  </div>`;
+}
+
 function renderSettings() {
   const p = ui.state.profile;
   const anthropic = ui.integrations?.anthropic;
@@ -1227,30 +1267,80 @@ function renderSettings() {
   const linkedinBadge = linkedin?.connected ? "Connected" : linkedin?.configured ? "OAuth configured" : "Fallback ready";
   const linkedinClass = linkedin?.connected ? "published" : linkedin?.configured ? "scheduled" : "draft";
   const databaseIsPostgres = database?.storage === "postgres";
-  return `<section class="page"><div class="eyebrow">Personalization</div><h1>Settings</h1><p class="lead">These details are loaded fresh whenever Mira creates a draft.</p>
-    ${productReadinessPanel()}
+  const companySummary = [p.company_name, p.industry, p.company_website].filter(Boolean).join(" · ") || "Not set";
+  const linkedinDetail = linkedin?.connected
+    ? "Connected for this staging session"
+    : linkedin?.configured
+      ? "OAuth configured · redirect/app access still required"
+      : "Not connected · manual fallback ready";
+  return `<section class="page settings-page" data-testid="settings-page"><div class="eyebrow">Settings</div><h1>Settings</h1><p class="lead">Your profile, LinkedIn connection, notification preferences, and staging status live here.</p>
     ${ui.notice ? `<div class="notice">${escapeHtml(ui.notice)}</div>` : ""}
-    <form class="card form-grid" id="profile-form">
-      ${field("First name", "first_name", p.first_name)}
-      ${field("Role", "role", p.role)}
-      ${field("Company", "company_name", p.company_name)}
-      ${field("Industry", "industry", p.industry)}
-      ${field("Company description", "company_description", p.company_description, true)}
-      ${field("Audience (comma separated)", "audience", p.audience.join(", "), true)}
-      ${field("Expertise (comma separated)", "expertise", p.expertise.join(", "), true)}
-      <div class="field"><label>Posting frequency</label><select name="posting_frequency"><option value="1-2x_per_week" ${p.posting_frequency === "1-2x_per_week" ? "selected" : ""}>1–2× per week</option><option value="3-4x_per_week" ${p.posting_frequency === "3-4x_per_week" ? "selected" : ""}>3–4× per week</option><option value="5+_per_week" ${p.posting_frequency === "5+_per_week" ? "selected" : ""}>5+ per week</option></select></div>
-      ${field("Tone", "tone", p.tone)}
-      ${textAreaField("Writing style notes", "writing_style", p.writing_style || "", "Example: Reflective, direct, specific, no hype. I like numbered points and founder lessons.", true)}
-      ${textAreaField("Writing samples", "writing_samples", (p.writing_samples || []).join("\n\n---\n\n"), "Paste 1-3 LinkedIn posts or writing examples. Separate samples with ---.", true)}
-      ${field("Preferred structure", "preferred_structure", p.preferred_structure || "Hook, context, lesson, reflective question", true)}
-      ${field("Phrases to avoid (comma separated)", "avoided_phrases", (p.avoided_phrases || []).join(", "), true)}
-      ${field("CTA style", "cta_style", p.cta_style || "Reflective question", true)}
-      <div class="field full"><button class="button">Save profile</button> <button type="button" class="button ghost" id="reset-demo">Reset workspace data</button></div>
-    </form>
-    <div class="card" style="margin-top:16px"><div class="card-head"><h3>AI generation</h3><span class="badge ${anthropic?.configured ? "published" : "draft"}">${anthropic?.configured ? "Claude ready" : "Local fallback"}</span></div><p class="muted">${anthropic?.configured ? `Mira drafts use ${escapeHtml(anthropic.model)} with profile, writing samples, voice controls, and Content Bank context.` : "Add ANTHROPIC_API_KEY in Render to enable live Claude generation. The local fallback still uses your CTA style and avoids generic repeated templates."}</p></div>
-    <div class="card" style="margin-top:16px"><div class="card-head"><h3>Database storage</h3><span class="badge ${databaseIsPostgres ? "published" : "draft"}">${databaseIsPostgres ? "Postgres active" : "File storage"}</span></div><p class="muted">${databaseIsPostgres ? "Signup, login, and workspace state are using the configured Render Postgres database." : "This staging app is still using MVP file-backed storage. Set USE_DATABASE_STORAGE=true and DATABASE_URL in Render to switch to Postgres."}</p></div>
-    <div class="card" style="margin-top:16px"><div class="card-head"><h3>LinkedIn</h3><span class="badge ${linkedinClass}">${linkedinBadge}</span></div><p class="muted">${linkedin?.connected ? "LinkedIn is connected for this staging session. Draft cards can publish directly." : linkedin?.configured ? "OAuth URL generation is available. The redirect URL must exactly match the LinkedIn app settings; otherwise use the manual fallback." : "Use Copy & open LinkedIn on any draft. For full OAuth on staging, add the Render URL to LinkedIn redirect URLs or route app.blidx.com to this service."}</p>${linkedin?.connected ? "" : '<button class="button secondary" id="connect-linkedin">Connect LinkedIn</button>'}</div>
-    <div class="card" style="margin-top:16px"><div class="card-head"><h3>PayloadCMS review</h3><span class="badge draft">${escapeHtml(payloadcms?.recommendation || "defer")}</span></div><p class="muted">${escapeHtml(payloadcms?.reason || "PayloadCMS review pending.")}</p></div>
+    ${settingsSection("Your Profile", [
+      settingsRow("👤", "purple", "Name", p.first_name || accountLabel()),
+      settingsRow("💼", "purple", "Role", p.role || "Not set"),
+      settingsRow("🏢", "purple", "Company & Industry", companySummary),
+      settingsRow("🧠", "purple", "Expertise", summarizeList(p.expertise)),
+      settingsRow("✍", "purple", "LinkedIn personality", savedStatus(p.writing_style, "About / voice notes saved")),
+      settingsRow("📄", "purple", "Writing samples", savedStatus(p.writing_samples, `${(p.writing_samples || []).length} samples saved`)),
+      settingsRow("🎯", "purple", "Target audience", summarizeList(p.audience)),
+      settingsRow("📝", "purple", "Content types", summarizeList(p.content_types)),
+      settingsRow("📅", "purple", "Posting frequency", (p.posting_frequency || "Not set").replaceAll("_", " ")),
+      settingsRow("🗣", "purple", "Tone", p.tone || "Not set"),
+    ])}
+    <div class="settings-section">
+      <div class="settings-header">LinkedIn</div>
+      <div class="linkedin-status-card">
+        <div class="li-dot ${linkedin?.connected ? "connected" : "disconnected"}"></div>
+        <div class="li-info">
+          <div class="li-label">${escapeHtml(linkedinBadge)}</div>
+          <div class="li-sub">${escapeHtml(linkedinDetail)}</div>
+        </div>
+        ${linkedin?.connected ? '<button class="li-action disconnect" type="button">Connected</button>' : '<button class="li-action connect" type="button" id="connect-linkedin">Connect</button>'}
+      </div>
+    </div>
+    ${settingsSection("Notifications", [
+      toggleRow("🔔", "Push notifications", "Drafts ready, performance updates, reminders", true),
+      toggleRow("✉", "Email nudges", "When you have not opened Blidx in a while", true),
+      settingsRow("⏰", "green", "Daily check-in time", "6:00 PM"),
+    ])}
+    ${settingsSection("Timezone", [
+      settingsRow("🌏", "blue", "Timezone", "Asia/Singapore (GMT+8) · Auto-detected"),
+    ])}
+    ${settingsSection("Account", [
+      settingsRow("🔒", "gray", "Change password", "Password reset is not enabled in staging"),
+      settingsRow("🗑", "red", "Reset workspace data", "Clears local/demo memories, drafts, and chat state", "Reset"),
+    ])}
+    <details class="settings-edit-card card">
+      <summary>Edit Mira profile details</summary>
+      <p class="muted small">These fields mirror onboarding and are loaded whenever Mira drafts.</p>
+      <form class="form-grid" id="profile-form">
+        ${field("First name", "first_name", p.first_name)}
+        ${field("Role", "role", p.role)}
+        ${field("Company", "company_name", p.company_name)}
+        ${field("Industry", "industry", p.industry)}
+        ${field("Company description", "company_description", p.company_description, true)}
+        ${field("Audience (comma separated)", "audience", p.audience.join(", "), true)}
+        ${field("Expertise (comma separated)", "expertise", p.expertise.join(", "), true)}
+        <div class="field"><label>Posting frequency</label><select name="posting_frequency"><option value="1-2x_per_week" ${p.posting_frequency === "1-2x_per_week" ? "selected" : ""}>1–2× per week</option><option value="3-4x_per_week" ${p.posting_frequency === "3-4x_per_week" ? "selected" : ""}>3–4× per week</option><option value="5+_per_week" ${p.posting_frequency === "5+_per_week" ? "selected" : ""}>5+ per week</option></select></div>
+        ${field("Tone", "tone", p.tone)}
+        ${textAreaField("Writing style notes", "writing_style", p.writing_style || "", "Example: Reflective, direct, specific, no hype. I like numbered points and founder lessons.", true)}
+        ${textAreaField("Writing samples", "writing_samples", (p.writing_samples || []).join("\n\n---\n\n"), "Paste 1-3 LinkedIn posts or writing examples. Separate samples with ---.", true)}
+        ${field("Preferred structure", "preferred_structure", p.preferred_structure || "Hook, context, lesson, reflective question", true)}
+        ${field("Phrases to avoid (comma separated)", "avoided_phrases", (p.avoided_phrases || []).join(", "), true)}
+        ${field("CTA style", "cta_style", p.cta_style || "Reflective question", true)}
+        <div class="field full"><button class="button">Save profile</button> <button type="button" class="button ghost" id="reset-demo">Reset workspace data</button></div>
+      </form>
+    </details>
+    <div class="settings-system">
+      <div class="eyebrow">System / staging</div>
+      ${productReadinessPanel()}
+      <div class="grid">
+        <div class="card"><div class="card-head"><h3>AI generation</h3><span class="badge ${anthropic?.configured ? "published" : "draft"}">${anthropic?.configured ? "Claude ready" : "Local fallback"}</span></div><p class="muted">${anthropic?.configured ? `Mira drafts use ${escapeHtml(anthropic.model)} with profile, writing samples, voice controls, and Content Bank context.` : "Add ANTHROPIC_API_KEY in Render to enable live Claude generation. The local fallback still uses your CTA style and avoids generic repeated templates."}</p></div>
+        <div class="card"><div class="card-head"><h3>Database storage</h3><span class="badge ${databaseIsPostgres ? "published" : "draft"}">${databaseIsPostgres ? "Postgres active" : "File storage"}</span></div><p class="muted">${databaseIsPostgres ? "Signup, login, and workspace state are using the configured Render Postgres database." : "This staging app is still using MVP file-backed storage. Set USE_DATABASE_STORAGE=true and DATABASE_URL in Render to switch to Postgres."}</p></div>
+      </div>
+      <div class="card" style="margin-top:16px"><div class="card-head"><h3>PayloadCMS review</h3><span class="badge draft">${escapeHtml(payloadcms?.recommendation || "defer")}</span></div><p class="muted">${escapeHtml(payloadcms?.reason || "PayloadCMS review pending.")}</p></div>
+    </div>
+    <div class="settings-version">Blidx staging MVP · Flow 5 alignment pass</div>
   </section>`;
 }
 

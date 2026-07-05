@@ -617,6 +617,84 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .readiness-item strong { font-size: 13px; }
 .readiness-item span { color: var(--muted); font-size: 12px; line-height: 1.35; }
 .readiness-item.done { border-color: #b9dfca; background: var(--green-soft); }
+.settings-section { margin-bottom: 20px; }
+.settings-header {
+  margin: 0 2px 8px; color: var(--muted);
+  font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em;
+}
+.settings-group {
+  overflow: hidden; border: 1px solid var(--line); border-radius: 18px;
+  background: white; box-shadow: 0 4px 20px rgba(30,25,50,.025);
+}
+.settings-row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px; align-items: center; padding: 14px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.settings-row:last-child { border-bottom: 0; }
+.settings-row-icon {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border-radius: 999px; font-size: 16px; background: var(--paper-2);
+}
+.settings-row-icon.purple { background: var(--purple-soft); color: var(--purple); }
+.settings-row-icon.green { background: var(--green-soft); color: var(--green); }
+.settings-row-icon.blue { background: var(--blue-soft); color: #365f9b; }
+.settings-row-icon.gray { background: var(--paper-2); color: var(--muted); }
+.settings-row-icon.red { background: #fff1f1; color: var(--danger); }
+.settings-row-label { font-weight: 800; font-size: 14px; }
+.settings-row-value {
+  margin-top: 2px; color: var(--muted); font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.settings-row-action { color: var(--faint); font-size: 22px; line-height: 1; }
+.linkedin-status-card {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px; align-items: center; padding: 16px;
+  border: 1px solid var(--line); border-radius: 18px; background: white;
+  box-shadow: 0 4px 20px rgba(30,25,50,.025);
+}
+.li-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--faint); box-shadow: 0 0 0 5px var(--paper-2);
+}
+.li-dot.connected { background: var(--green); box-shadow: 0 0 0 5px var(--green-soft); }
+.li-dot.disconnected { background: var(--danger); box-shadow: 0 0 0 5px #fff1f1; }
+.li-label { font-weight: 900; }
+.li-sub { margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.35; }
+.li-action {
+  border: 0; border-radius: 999px; padding: 9px 12px;
+  font-size: 12px; font-weight: 900;
+}
+.li-action.connect { background: var(--purple); color: white; }
+.li-action.disconnect { background: var(--green-soft); color: var(--green); }
+.toggle {
+  width: 42px; height: 24px; border-radius: 999px;
+  background: var(--paper-3); position: relative;
+}
+.toggle::after {
+  content: ""; position: absolute; top: 3px; left: 3px;
+  width: 18px; height: 18px; border-radius: 50%; background: white;
+  box-shadow: 0 1px 4px rgba(0,0,0,.15); transition: transform .2s ease;
+}
+.toggle.on { background: var(--purple); }
+.toggle.on::after { transform: translateX(18px); }
+.settings-edit-card { margin-top: 20px; }
+.settings-edit-card summary {
+  cursor: pointer; color: var(--purple); font-weight: 900;
+  list-style: none;
+}
+.settings-edit-card summary::-webkit-details-marker { display: none; }
+.settings-edit-card summary::after {
+  content: "›"; float: right; color: var(--faint); font-size: 24px;
+  transform: rotate(90deg);
+}
+.settings-edit-card[open] summary::after { transform: rotate(270deg); }
+.settings-edit-card form { margin-top: 16px; }
+.settings-system { margin-top: 24px; }
+.settings-version {
+  padding: 20px 16px; text-align: center;
+  color: var(--faint); font-size: 11px; font-weight: 700;
+}
 .qa-summary {
   display: grid; grid-template-columns: minmax(0, 1fr) auto;
   gap: 18px; align-items: center; margin-bottom: 18px;
@@ -741,6 +819,18 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
     border-radius: 13px;
   }
   .readiness-grid { grid-template-columns: 1fr; }
+  .settings-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    padding: 13px 14px;
+  }
+  .settings-row-icon { width: 32px; height: 32px; font-size: 15px; }
+  .linkedin-status-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .li-action {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
   .qa-summary { grid-template-columns: 1fr; }
   .qa-actions { display: grid; grid-template-columns: 1fr; justify-content: stretch; }
   .qa-grid { grid-template-columns: 1fr; }
