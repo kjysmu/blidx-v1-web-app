@@ -1098,6 +1098,16 @@ function bindView() {
   document.querySelectorAll("[data-linkedin-track]").forEach((button) => {
     button.onclick = () => trackLinkedInUrl(button.dataset.linkedinTrack);
   });
+  document.querySelectorAll("[data-copy-draft]").forEach((button) => {
+    button.onclick = () => copyDraft(button.dataset.copyDraft);
+  });
+  document.querySelector("#linkedin-url")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const id = document.querySelector("[data-linkedin-track]")?.dataset.linkedinTrack;
+      if (id) trackLinkedInUrl(id);
+    }
+  });
   document.querySelector("#close-draft-review")?.addEventListener("click", () => {
     ui.reviewDraftId = null;
     render();
@@ -1351,8 +1361,26 @@ function quickEditButton(label) {
   return `<button class="prompt-chip" type="button" data-quick-edit="${escapeHtml(label)}">${escapeHtml(label)}</button>`;
 }
 
+function setModalBusy(isBusy, label = "Working…") {
+  document.querySelectorAll(".modal button, .modal input, .modal textarea").forEach((element) => {
+    element.disabled = isBusy;
+  });
+  const status = document.querySelector("[data-modal-status]");
+  if (status) status.textContent = isBusy ? label : "";
+}
+
+function showModalError(message) {
+  const status = document.querySelector("[data-modal-status]");
+  if (status) {
+    status.textContent = message;
+    status.classList.add("error");
+    return;
+  }
+  showToast(message);
+}
+
 function showScheduleModal(id) {
-  ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>When should this post move forward?</h3><p class="muted">Choose a testable scheduling state. For real LinkedIn publishing today, keep using Copy & open LinkedIn.</p>
+  ui.modal = `<div class="modal-backdrop"><div class="modal"><div class="modal-head"><h3>When should this post move forward?</h3><button class="icon-button" data-modal-close="true" aria-label="Close schedule modal">Close</button></div><p class="muted">Choose a testable scheduling state. For real LinkedIn publishing today, keep using Copy & open LinkedIn.</p>
     <div class="schedule-options">
       ${scheduleButton("now", "Post now", "Mark it as published inside Blidx.")}
       ${scheduleButton("later_today", "Later today", "Schedule for 5:30 PM in the profile timezone.")}
@@ -1364,10 +1392,13 @@ function showScheduleModal(id) {
       <input class="input" id="custom-scheduled-at" type="datetime-local" value="${defaultCustomScheduleValue()}" />
       <button class="button secondary" id="custom-schedule">Schedule custom time</button>
     </div>
+    <div class="modal-status" data-modal-status></div>
     <div class="modal-actions"><button class="button ghost" id="cancel-modal">Cancel</button></div>
   </div></div>`;
   render();
-  document.querySelector("#cancel-modal").onclick = () => { ui.modal = null; render(); };
+  const close = () => { ui.modal = null; render(); };
+  document.querySelector("#cancel-modal").onclick = close;
+  document.querySelector("[data-modal-close]")?.addEventListener("click", close);
   document.querySelectorAll("[data-schedule]").forEach((button) => {
     button.onclick = () => approveDraft(id, button.dataset.schedule);
   });
@@ -1415,34 +1446,67 @@ async function useVariant(id, variantId) {
 }
 
 async function approveDraft(id, schedule_type, scheduled_at = null) {
-  await api(`/api/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ schedule_type, scheduled_at }) });
-  ui.modal = null;
-  ui.reviewDraftId = null;
-  await refresh();
-  showToast(schedule_type === "now" ? "Published locally" : "Scheduled and added to Calendar");
+  try {
+    setModalBusy(true, schedule_type === "now" ? "Marking as published…" : "Scheduling draft…");
+    await api(`/api/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ schedule_type, scheduled_at }) });
+    ui.modal = null;
+    ui.reviewDraftId = null;
+    await refresh();
+    showToast(schedule_type === "now" ? "Published locally" : "Scheduled and added to Calendar");
+  } catch (error) {
+    setModalBusy(false);
+    showModalError(error.message || "Could not update this draft. Please try again.");
+  }
 }
 
 async function copyAndOpenLinkedIn(id) {
   const post = ui.state.posts.find((item) => item.id === id);
   if (!post) return;
-  const publishResult = await api(`/api/drafts/${id}/publish`, { method: "POST" });
-  if (publishResult.published) {
-    await refresh();
-    showToast("Published to LinkedIn");
-    return;
-  }
   try {
-    await navigator.clipboard.writeText(post.content);
-    showToast("Draft copied. Opening LinkedIn…");
+    showToast("Preparing LinkedIn handoff…");
+    const publishResult = await api(`/api/drafts/${id}/publish`, { method: "POST" });
+    if (publishResult.published) {
+      await refresh();
+      showToast("Published to LinkedIn");
+      return;
+    }
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(post.content);
+      copied = true;
+    } catch (error) {
+      copied = false;
+    }
+    const opened = window.open(
+      publishResult.fallback_url || ui.integrations?.linkedin?.fallback_url || "https://www.linkedin.com/feed/",
+      "_blank",
+      "noopener,noreferrer"
+    );
+    showLinkedInTrackingModal(id, { copied, opened: Boolean(opened), content: post.content });
   } catch (error) {
-    showToast("Opening LinkedIn. Copy the draft manually if clipboard is blocked.");
+    showToast(error.message || "Could not prepare the LinkedIn handoff.");
   }
-  window.open(publishResult.fallback_url || ui.integrations?.linkedin?.fallback_url || "https://www.linkedin.com/feed/", "_blank", "noopener,noreferrer");
-  showLinkedInTrackingModal(id);
 }
 
-function showLinkedInTrackingModal(id) {
-  ui.modal = `<div class="modal-backdrop"><div class="modal"><h3>Did you post it on LinkedIn?</h3><p class="muted">After you paste and publish the draft on LinkedIn, add the post URL here so Blidx can mark it as published. If you have not posted it yet, choose Not yet and the draft will stay available in Blidx.</p><input class="input" id="linkedin-url" placeholder="https://www.linkedin.com/feed/update/..." /><div class="modal-actions"><button class="button ghost" data-linkedin-defer="true">Not yet</button><button class="button" data-linkedin-track="${escapeHtml(id)}">Mark posted</button></div></div></div>`;
+function showLinkedInTrackingModal(id, handoff = {}) {
+  const copyStatus = handoff.copied
+    ? "The draft has been copied to your clipboard."
+    : "Clipboard access was blocked. Copy the draft manually below before posting.";
+  const openStatus = handoff.opened
+    ? "LinkedIn opened in a new tab."
+    : "If LinkedIn did not open, use the button below.";
+  ui.modal = `<div class="modal-backdrop"><div class="modal"><div class="modal-head"><h3>Did you post it on LinkedIn?</h3><button class="icon-button" data-modal-close="true" aria-label="Close LinkedIn modal">Close</button></div>
+    <p class="muted">${copyStatus} ${openStatus}</p>
+    ${handoff.copied ? "" : `<textarea class="handoff-copy" readonly>${escapeHtml(handoff.content || "")}</textarea>`}
+    <div class="linkedin-handoff-actions">
+      <a class="button secondary" href="https://www.linkedin.com/feed/" target="_blank" rel="noopener noreferrer">Open LinkedIn</a>
+      <button class="button ghost" data-copy-draft="${escapeHtml(id)}">Copy draft again</button>
+    </div>
+    <p class="muted small">After publishing on LinkedIn, paste the post URL here. If you have not posted yet, choose Not yet and the draft stays available in Blidx.</p>
+    <input class="input" id="linkedin-url" placeholder="https://www.linkedin.com/feed/update/..." />
+    <div class="modal-status" data-modal-status></div>
+    <div class="modal-actions"><button class="button ghost" data-linkedin-defer="true">Not yet</button><button class="button" data-linkedin-track="${escapeHtml(id)}">Mark posted</button></div>
+  </div></div>`;
   render();
 }
 
@@ -1453,11 +1517,22 @@ function deferLinkedInTracking() {
 }
 
 async function trackLinkedInUrl(id) {
-  const url = document.querySelector("#linkedin-url")?.value || "";
-  await api(`/api/drafts/${id}/track-linkedin-url`, { method: "POST", body: JSON.stringify({ url }) });
-  ui.modal = null;
-  await refresh();
-  showToast("Marked as posted");
+  const url = document.querySelector("#linkedin-url")?.value.trim() || "";
+  if (url && !/^https:\/\/([a-z]+\.)?linkedin\.com\//i.test(url)) {
+    showModalError("Please paste a LinkedIn post URL, or choose Not yet.");
+    return;
+  }
+  try {
+    setModalBusy(true, "Marking as posted…");
+    await api(`/api/drafts/${id}/track-linkedin-url`, { method: "POST", body: JSON.stringify({ url }) });
+    ui.modal = null;
+    ui.reviewDraftId = null;
+    await refresh();
+    showToast(url ? "Marked as posted with LinkedIn URL" : "Marked as posted");
+  } catch (error) {
+    setModalBusy(false);
+    showModalError(error.message || "Could not mark this post as published.");
+  }
 }
 
 async function connectLinkedIn() {

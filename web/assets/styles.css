@@ -463,6 +463,28 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 }
 .modal { width: min(480px, 100%); background: white; border-radius: 20px; padding: 22px; box-shadow: var(--shadow); }
 .modal h3 { margin-bottom: 12px; }
+.modal-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 14px; margin-bottom: 8px;
+}
+.modal-head h3 { margin-bottom: 0; }
+.modal-status {
+  min-height: 18px; margin-top: 12px; color: var(--muted);
+  font-size: 12px; font-weight: 800;
+}
+.modal-status.error { color: var(--danger); }
+.modal button:disabled,
+.modal input:disabled,
+.modal textarea:disabled {
+  opacity: .55; cursor: wait;
+}
+.linkedin-handoff-actions {
+  display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0;
+}
+.handoff-copy {
+  width: 100%; min-height: 150px; margin-top: 12px;
+  border-color: #d8d1f4; background: #faf9ff;
+}
 .draft-review-backdrop { align-items: start; overflow: auto; }
 .draft-review-modal {
   width: min(920px, 100%); max-height: calc(100vh - 40px);
