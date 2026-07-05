@@ -331,19 +331,25 @@ class DemoStore:
             followup_draft = self._is_affirmative_draft_request(state, content)
             if wants_draft or followup_draft:
                 topic = (
-                    self._topic_from_context(state)
+                    self._topic_from_context(state, content if followup_draft else None)
                     if followup_draft or self._wants_latest_context(content)
                     else self._extract_topic(content)
                 )
-                post = self._draft(state, topic, "chat")
-                state["posts"].insert(0, post)
-                reply = (
-                    "I drafted it and kept it in the review workspace. "
-                    "Read it through once, then choose the next move: revise the voice, save it, schedule it, or use the LinkedIn fallback."
-                )
-                actions = ["draft_created"]
-                kind = "draft_created"
-                post_id = post["id"]
+                if not followup_draft and self._needs_context_before_drafting(state, topic):
+                    reply = self._context_request_reply(state, topic)
+                    actions = ["context_requested"]
+                    kind = "context_request"
+                    post_id = None
+                else:
+                    post = self._draft(state, topic, "chat")
+                    state["posts"].insert(0, post)
+                    reply = (
+                        "I drafted it and kept it in the review workspace. "
+                        "Read it once for truth, then choose the next move: revise the voice, save it, schedule it, or use the LinkedIn fallback."
+                    )
+                    actions = ["draft_created"]
+                    kind = "draft_created"
+                    post_id = post["id"]
             elif memory:
                 reply = (
                     "Saved that to your Content Bank. It has the shape of a personal insight, "
@@ -946,6 +952,7 @@ class DemoStore:
             "draft about",
             "draft a linkedin post about",
             "draft linkedin post about",
+            "write a draft about",
             "write a post about",
             "create a post about",
             "make a post about",
@@ -978,19 +985,7 @@ class DemoStore:
 
     @staticmethod
     def _is_affirmative_draft_request(state: dict, content: str) -> bool:
-        lowered = content.lower().strip(" .!?,")
-        affirmative = (
-            "yes",
-            "yes please",
-            "go ahead",
-            "do it",
-            "draft it",
-            "please draft",
-            "make it",
-            "turn it into a post",
-            "sounds good",
-        )
-        if lowered not in affirmative:
+        if not DemoStore._is_affirmative_text(content):
             return False
         recent_mira = [
             message
@@ -1003,12 +998,15 @@ class DemoStore:
         )
 
     @staticmethod
-    def _topic_from_context(state: dict) -> str:
+    def _topic_from_context(state: dict, current_content: str | None = None) -> str:
         if state.get("content_bank"):
             latest = state["content_bank"][0]["raw_text"]
             if "ai" in latest.lower() and "mental" in json.dumps(state.get("profile", {})).lower():
                 return "human connection versus AI in mental health"
             return latest[:140]
+        recent_topic = DemoStore._topic_from_recent_draft_request(state, current_content)
+        if recent_topic:
+            return recent_topic
         messages = [
             message.get("content", "")
             for message in state.get("messages", [])
@@ -1017,9 +1015,52 @@ class DemoStore:
         return messages[-1] if messages else "a founder insight from this week"
 
     @staticmethod
+    def _topic_from_recent_draft_request(state: dict, current_content: str | None = None) -> str | None:
+        current = (current_content or "").strip()
+        for message in reversed(state.get("messages", [])[-8:]):
+            content = (message.get("content") or "").strip()
+            if message.get("role") != "user" or not content:
+                continue
+            if current and content == current:
+                continue
+            if DemoStore._is_affirmative_text(content):
+                continue
+            if DemoStore._wants_draft(content):
+                return DemoStore._extract_topic(content)
+        return None
+
+    @staticmethod
+    def _is_affirmative_text(content: str) -> bool:
+        lowered = content.lower().strip(" .!?,")
+        affirmative = (
+            "yes",
+            "yes please",
+            "go ahead",
+            "do it",
+            "draft it",
+            "please draft",
+            "make it",
+            "just draft it",
+            "turn it into a post",
+            "sounds good",
+        )
+        return lowered in affirmative
+
+    @staticmethod
     def _provider_label(post: dict) -> str:
         provider = post.get("generation_provider") or "template"
         return "Claude" if provider.startswith("Anthropic") else "your profile and Content Bank context"
+
+    @staticmethod
+    def _polish_title(title: str) -> str:
+        for source, replacement in {
+            "Ai": "AI",
+            "Saas": "SaaS",
+            "Gtm": "GTM",
+            "Api": "API",
+        }.items():
+            title = title.replace(source, replacement)
+        return title
 
     @staticmethod
     def _draft(state: dict, topic: str, source: str) -> dict:
@@ -1048,6 +1089,7 @@ class DemoStore:
         title = hook[:70].strip()
         if title:
             title = title[0].upper() + title[1:]
+            title = DemoStore._polish_title(title)
         post = {
             "id": str(uuid.uuid4()),
             "title": title,
@@ -1352,6 +1394,7 @@ class DemoStore:
             "draft about",
             "draft a linkedin post about",
             "draft linkedin post about",
+            "write a draft about",
             "write a post about",
             "create a post about",
             "make a post about",
@@ -1441,6 +1484,53 @@ class DemoStore:
         return len(topic_terms & profile_terms) >= 2
 
     @staticmethod
+    def _needs_context_before_drafting(state: dict, topic: str) -> bool:
+        topic = DemoStore._clean_topic(topic)
+        lowered = topic.lower()
+        if DemoStore._relevant_memory(state, topic):
+            return False
+        padded = f" {lowered} "
+        if any(pronoun in padded for pronoun in (" i ", " we ", " my ", " our ")):
+            return False
+        if any(
+            signal in lowered
+            for signal in (
+                "today",
+                "this week",
+                "because",
+                "after",
+                "when",
+                "learned",
+                "realized",
+                "spoke",
+                "met",
+                "launched",
+                "rebuilt",
+            )
+        ):
+            return False
+        if ":" in topic or len(topic.split()) >= 7:
+            return False
+        topic_terms = DemoStore._topic_terms(topic)
+        return len(topic_terms) <= 4
+
+    @staticmethod
+    def _context_request_reply(state: dict, topic: str) -> str:
+        topic = DemoStore._clean_topic(topic)
+        profile = state.get("profile", {})
+        company = profile.get("company_name") or "your work"
+        if "latest memory" in topic.lower() or "content bank" in topic.lower():
+            return (
+                "I can draft from the Content Bank, but there is not a strong matching memory yet. "
+                "Give me one real moment first: what happened, why it mattered, and what it changed in your thinking?"
+            )
+        return (
+            f"I can draft about {topic}, but I do not want to give you a generic AI-looking post.\n\n"
+            f"Give me one concrete detail from {company}: a moment, conversation, decision, event, or tension behind this topic. "
+            "One sentence is enough. If you want me to draft without that context anyway, say “just draft it.”"
+        )
+
+    @staticmethod
     def _closing_question(profile: dict) -> str:
         cta_style = (profile.get("cta_style") or "").lower()
         if "comment" in cta_style:
@@ -1466,6 +1556,9 @@ class DemoStore:
             "Prefer concrete founder moments over broad claims. Avoid hype, cliches, and any phrases listed as avoided. "
             "Vary the structure. Do not use the same hook-context-lesson-question sequence every time. "
             "Choose the format that fits the topic: personal story, sharp observation, practical list, founder note, or reflective essay. "
+            "Avoid obvious AI patterns: 'not just X, but Y', 'in today's fast-paced world', 'game changer', 'unlock', "
+            "'the future of', and generic inspirational endings. "
+            "Avoid over-explaining. Leave some texture and human imperfection if it fits the user's style. "
             "Use short paragraphs. If listing multiple points, use the user's preferred numbered style like 1/, 2/, 3/. "
             "End with the user's preferred CTA style. "
             "Do not repeat command phrases such as 'draft about' in the draft. "
@@ -1538,7 +1631,7 @@ class DemoStore:
                 + (
                     json.dumps(memories, indent=2)
                     if memories
-                    else "No Content Bank entries yet. Ask a reflective question rather than inventing personal context."
+                    else "No matching Content Bank entry. Do not invent personal context; make the post more observational and less specific."
                 ),
                 "QUALITY BAR\n"
                 "1. Data plus emotion: connect facts to lived experience.\n"
@@ -1546,7 +1639,8 @@ class DemoStore:
                 "3. Numbered structure when useful: 1/, 2/, 3/.\n"
                 "4. Vulnerability with strength: honest, resilient, never performative.\n"
                 "5. Call to connection: invite readers into the conversation.\n"
-                "6. Measured but passionate: conviction with humility.",
+                "6. Measured but passionate: conviction with humility.\n"
+                "7. Human specificity: avoid generic AI cadence, tidy fake certainty, and recycled thought-leadership phrases.",
             ]
         )
 
@@ -1563,8 +1657,8 @@ class DemoStore:
             "Do not always use the same structure. Sometimes ask one sharp question; sometimes offer options; "
             "sometimes name the strongest angle directly. Keep replies short enough for a chat screen. "
             "When suggesting angles, format them exactly as '1/ Angle title: one-sentence explanation.' "
-            "so the product can offer draft actions. If the user asks for a draft, say you can draft it "
-            "and ask for one missing detail only if essential. Respect the user's voice controls."
+            "so the product can offer draft actions. If the user's topic is broad and lacks a real moment, "
+            "ask for one concrete detail before drafting. Respect the user's voice controls."
         )
         messages = state.get("messages", [])[-8:]
         prompt = "\n\n".join(

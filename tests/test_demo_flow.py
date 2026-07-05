@@ -181,6 +181,17 @@ def test_generic_chat_draft_does_not_force_company_anchor(monkeypatch):
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["actions"] == ["context_requested"]
+    assert payload["post"] is None
+    assert "generic AI-looking post" in payload["reply"]
+
+    response = client.post(
+        "/api/chat/message",
+        json={"message": "just draft it"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
     assert "draft_created" in payload["actions"]
     post = payload["post"]
     assert post["title"] == "AI and music"
@@ -189,6 +200,36 @@ def test_generic_chat_draft_does_not_force_company_anchor(monkeypatch):
     assert "At Blidx" not in post["content"]
     assert "building Blidx" not in post["content"]
     assert all("At Blidx" not in variant["content"] for variant in post["variants"])
+
+    client.post("/api/reset")
+
+
+def test_mira_asks_for_context_before_generic_draft_request(monkeypatch):
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
+    client.post("/api/reset")
+
+    response = client.post(
+        "/api/chat/message",
+        json={"message": "write a draft about ai and healthcare"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["actions"] == ["context_requested"]
+    assert payload["post"] is None
+    assert payload["state"]["posts"] == []
+    assert "one concrete detail" in payload["reply"]
+
+    response = client.post(
+        "/api/chat/message",
+        json={"message": "just draft it"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "draft_created" in payload["actions"]
+    assert payload["post"]["title"] == "AI and healthcare"
+    assert "just draft it" not in payload["post"]["content"].lower()
 
     client.post("/api/reset")
 
