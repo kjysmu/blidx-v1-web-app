@@ -106,6 +106,7 @@ const navItems = [
   ["bank", "▦", "Bank"],
   ["library", "▤", "Library"],
   ["calendar", "□", "Calendar"],
+  ["qa", "✓", "QA"],
   ["settings", "⚙", "Settings"],
 ];
 
@@ -125,6 +126,7 @@ function sectionLabel() {
     library: "Library",
     calendar: "Calendar",
     analytics: "Progress",
+    qa: "QA status",
     settings: "Settings",
   }[ui.tab] || "Content workspace";
 }
@@ -135,6 +137,7 @@ function quickActionsMenu() {
     <button data-action="qa-draft"><span>Draft</span><strong>Draft a post</strong><small>Start a Mira draft from any idea.</small></button>
     <button data-action="qa-checkin"><span>Check-in</span><strong>Daily check-in</strong><small>Capture a fresh Content Bank moment.</small></button>
     <button data-action="qa-progress"><span>Progress</span><strong>Performance & progress</strong><small>Open the lightweight Analytics view.</small></button>
+    <button data-action="qa-status"><span>QA</span><strong>Test checklist</strong><small>See what is testable and what is still limited.</small></button>
   </div>`;
 }
 
@@ -269,6 +272,13 @@ function bindGlobal() {
       render();
     };
   });
+  document.querySelectorAll('[data-action="qa-status"]').forEach((button) => {
+    button.onclick = () => {
+      ui.quickActionsOpen = false;
+      ui.tab = "qa";
+      render();
+    };
+  });
   document.querySelectorAll('[data-action="logout"]').forEach((button) => {
     button.onclick = logout;
   });
@@ -297,7 +307,7 @@ function render() {
     bindOnboarding();
     return;
   }
-  const views = { chat: renderChat, bank: renderBank, library: renderLibrary, calendar: renderCalendar, analytics: renderAnalytics, settings: renderSettings };
+  const views = { chat: renderChat, bank: renderBank, library: renderLibrary, calendar: renderCalendar, analytics: renderAnalytics, qa: renderQA, settings: renderSettings };
   layout(views[ui.tab]());
   bindView();
   scrollChatIfRequested();
@@ -999,6 +1009,177 @@ function renderAnalytics() {
 
 function statCard(label, value, helper) {
   return `<div class="card stat-card"><div class="muted small">${label}</div><div class="metric">${value}</div><p class="muted small">${escapeHtml(helper)}</p></div>`;
+}
+
+function qaChecks() {
+  const posts = ui.state.posts || [];
+  const bank = ui.state.content_bank || [];
+  const linkedin = ui.integrations?.linkedin;
+  const hasPending = posts.some((post) => post.status === "pending");
+  const hasLibrary = posts.some((post) => post.status !== "deleted");
+  const hasScheduled = posts.some((post) => post.status === "scheduled" || post.status === "published");
+  const database = ui.integrations?.database;
+  return [
+    {
+      flow: "Auth / workspace",
+      status: ui.state.auth?.authenticated ? "Testable" : ui.demoMode ? "Demo mode" : "Needs login",
+      done: Boolean(ui.state.auth?.authenticated || ui.demoMode),
+      detail: ui.state.auth?.authenticated ? "Signed-in workspace is active." : "Public demo mode is available; production auth hardening is still separate.",
+      next: "Create account, log out, then log back in.",
+      tab: "settings",
+    },
+    {
+      flow: "Onboarding",
+      status: ui.state.onboarding_completed ? "Testable" : "Needs setup",
+      done: Boolean(ui.state.onboarding_completed),
+      detail: ui.state.onboarding_completed ? "Founder/company/audience/voice context exists." : "Complete the setup questionnaire first.",
+      next: "Check whether the questions match the intended founder onboarding.",
+      tab: "settings",
+    },
+    {
+      flow: "Content Bank",
+      status: bank.length ? "Testable" : "Needs memory",
+      done: bank.length > 0,
+      detail: bank.length ? `${bank.length} entries available for Mira.` : "Add one real work moment before testing drafts.",
+      next: "Add, edit, mark used/high potential, then draft from a memory.",
+      tab: "bank",
+    },
+    {
+      flow: "Mira strategy",
+      status: bank.length ? "Testable" : "Needs memory",
+      done: bank.length > 0,
+      detail: "Mira can suggest angles, recommend a draft framework, and ask for missing detail before drafting.",
+      next: "Ask: Give me 3 angles from my Content Bank.",
+      tab: "chat",
+    },
+    {
+      flow: "Draft workspace",
+      status: hasPending || hasLibrary ? "Testable" : "Needs draft",
+      done: hasPending || hasLibrary,
+      detail: hasPending ? "A pending draft is ready for review." : hasLibrary ? "Drafts exist in Library." : "Generate one draft from Mira.",
+      next: "Open draft workspace, read full draft, edit, save, approve, or skip.",
+      tab: hasLibrary ? "library" : "chat",
+    },
+    {
+      flow: "Library",
+      status: hasLibrary ? "Testable" : "Needs draft",
+      done: hasLibrary,
+      detail: hasLibrary ? "Drafts/scheduled/published items should remain visible." : "Library is empty until a draft exists.",
+      next: "Use filters, expand full draft, approve from Library.",
+      tab: "library",
+    },
+    {
+      flow: "Calendar",
+      status: hasScheduled ? "Testable" : "Needs scheduled post",
+      done: hasScheduled,
+      detail: hasScheduled ? "Scheduled/published posts are visible." : "Approve a draft for best time or custom time first.",
+      next: "Approve a draft, then confirm it appears in Calendar.",
+      tab: "calendar",
+    },
+    {
+      flow: "LinkedIn",
+      status: linkedin?.connected ? "Connected" : linkedin?.configured ? "OAuth pending" : "Fallback only",
+      done: Boolean(linkedin?.connected || linkedin?.configured),
+      detail: linkedin?.connected
+        ? "OAuth connection is active for this session."
+        : linkedin?.configured
+          ? "Credentials exist; redirect/app access still controls final OAuth posting."
+          : "Manual copy/open fallback is the safe test path.",
+      next: "Use Copy & open LinkedIn, then choose Not yet or Mark posted.",
+      tab: hasLibrary ? "library" : "chat",
+    },
+    {
+      flow: "Storage",
+      status: database?.storage === "postgres" ? "Postgres" : "File-backed",
+      done: database?.storage === "postgres",
+      detail: database?.storage === "postgres" ? "Render Postgres-backed storage is active." : "MVP file-backed storage is active in this environment.",
+      next: "Confirm Render DATABASE_URL and USE_DATABASE_STORAGE before production-like testing.",
+      tab: "settings",
+    },
+  ];
+}
+
+function qaFlowCard(item) {
+  const badgeClass = item.done ? "published" : item.status === "OAuth pending" || item.status === "Demo mode" ? "scheduled" : "draft";
+  return `<div class="qa-item ${item.done ? "done" : ""}">
+    <div class="qa-item-head"><strong>${escapeHtml(item.flow)}</strong><span class="badge ${badgeClass}">${escapeHtml(item.status)}</span></div>
+    <p>${escapeHtml(item.detail)}</p>
+    <div class="qa-next"><span>Next test</span>${escapeHtml(item.next)}</div>
+    <button class="button secondary" data-tab="${escapeHtml(item.tab)}">Open ${escapeHtml(sectionNameForTab(item.tab))}</button>
+  </div>`;
+}
+
+function sectionNameForTab(tab) {
+  return {
+    chat: "Chat",
+    bank: "Content Bank",
+    library: "Library",
+    calendar: "Calendar",
+    settings: "Settings",
+  }[tab] || "Flow";
+}
+
+function renderQA() {
+  const checks = qaChecks();
+  const readyCount = checks.filter((item) => item.done).length;
+  const posts = ui.state.posts || [];
+  const bank = ui.state.content_bank || [];
+  const knownLimitations = [
+    "LinkedIn auto-posting still depends on LinkedIn Developer redirect/app access. Manual fallback is the reliable test path for now.",
+    "Auth is staging-level. Password reset, email verification, account recovery, and production security hardening are not complete yet.",
+    "Mira has stronger strategy and framework behavior now, but still needs deeper voice learning from more writing samples.",
+    "The UI is more responsive, but exact mockup parity still needs a dedicated visual comparison pass against the handoff HTML files.",
+  ];
+  return `<section class="page qa-page" data-testid="qa-page">
+    <div class="eyebrow">Test mode</div>
+    <h1>QA status</h1>
+    <p class="lead">Use this page to test Blidx like a product flow instead of guessing what should work. It reflects the current staging MVP state, not a production release.</p>
+    <div class="qa-summary card">
+      <div>
+        <span class="eyebrow">Current readiness</span>
+        <div class="metric">${readyCount}/${checks.length}</div>
+        <p class="muted">Content Bank: ${bank.length} · Posts: ${posts.length} · Auth: ${ui.state.auth?.authenticated ? "signed in" : ui.demoMode ? "demo" : "not signed in"}</p>
+      </div>
+      <div class="qa-actions">
+        <button class="button" data-tab="bank">Start with Content Bank</button>
+        <button class="button secondary" data-tab="chat">Test Mira</button>
+        <button class="button ghost" data-tab="library">Review Library</button>
+      </div>
+    </div>
+    <div class="qa-script card">
+      <div class="card-head"><h3>Recommended QA script</h3><span class="badge draft">Golden path</span></div>
+      <div class="checklist">
+        ${[
+          "Sign up or log in.",
+          "Complete onboarding with real founder/company/voice context.",
+          "Add one real memory to Content Bank.",
+          "Ask Mira for 3 angles from the Content Bank.",
+          "Choose one angle and generate a draft.",
+          "Open draft workspace, edit/save/approve/copy.",
+          "Confirm Library and Calendar reflect the state change.",
+          "Use LinkedIn fallback and choose Not yet or Mark posted.",
+        ].map((item, index) => `<div class="check done"><span>${index + 1}</span>${escapeHtml(item)}</div>`).join("")}
+      </div>
+    </div>
+    <div class="qa-grid">
+      ${checks.map(qaFlowCard).join("")}
+    </div>
+    <div class="card qa-limitations">
+      <div class="card-head"><h3>Known limitations</h3><span class="badge scheduled">staging</span></div>
+      ${knownLimitations.map((item) => `<p><strong>•</strong> ${escapeHtml(item)}</p>`).join("")}
+    </div>
+    <div class="card qa-feedback">
+      <div class="card-head"><h3>How to send feedback</h3><span class="badge draft">structured</span></div>
+      <p class="muted">Best format for Malia/testing feedback:</p>
+      <div class="feedback-template">
+        <code>Flow:</code> Auth / Onboarding / Content Bank / Mira / Draft / Library / Calendar / LinkedIn<br>
+        <code>What I tried:</code> ...<br>
+        <code>Expected:</code> ...<br>
+        <code>Actual:</code> ...<br>
+        <code>Screenshot:</code> optional
+      </div>
+    </div>
+  </section>`;
 }
 
 function productReadinessPanel() {

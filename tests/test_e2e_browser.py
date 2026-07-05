@@ -171,4 +171,11 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     calendar_page.wait_for()
     calendar_page.get_by_text("Best time this week").first.wait_for()
 
+    page.locator('[data-tab="qa"]').first.click()
+    qa_page = page.locator('[data-testid="qa-page"]')
+    qa_page.wait_for()
+    qa_page.get_by_text("Recommended QA script").wait_for()
+    qa_page.get_by_text("Known limitations").wait_for()
+    qa_page.get_by_text("How to send feedback").wait_for()
+
     context.close()
