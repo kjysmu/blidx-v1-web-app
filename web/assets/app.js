@@ -202,13 +202,13 @@ function renderAuth() {
       <h2>${isSignup ? "Sign up" : "Log in"}</h2>
       <p class="muted">${isSignup ? "Use at least 8 characters for the password." : "Use the email and password you registered with."}</p>
       ${ui.authError ? `<div class="notice error">${escapeHtml(ui.authError)}</div>` : ""}
-      <form id="auth-form">
+      <form id="auth-form" data-testid="auth-form">
         ${isSignup ? '<div class="field"><label>Name</label><input class="input" name="user_name" placeholder="Jae" /></div>' : ""}
         <div class="field"><label>Email</label><input class="input" name="email" type="email" required placeholder="you@example.com" /></div>
         <div class="field"><label>Password</label><input class="input" name="password" type="password" required minlength="${isSignup ? 8 : 1}" placeholder="••••••••" /></div>
-        <button class="button" style="width:100%" ${ui.authSubmitting ? "disabled" : ""}>${ui.authSubmitting ? "Checking..." : isSignup ? "Create account" : "Log in"}</button>
+        <button class="button" data-testid="auth-submit" style="width:100%" ${ui.authSubmitting ? "disabled" : ""}>${ui.authSubmitting ? "Checking..." : isSignup ? "Create account" : "Log in"}</button>
       </form>
-      <button class="button ghost auth-switch" id="toggle-auth">${isSignup ? "Already have an account? Log in" : "New here? Create account"}</button>
+      <button class="button ghost auth-switch" id="toggle-auth" data-testid="auth-toggle">${isSignup ? "Already have an account? Log in" : "New here? Create account"}</button>
       <button class="button secondary auth-switch" id="continue-demo">Continue with public demo</button>
     </section>
   </main>`;
@@ -351,7 +351,7 @@ function renderOnboarding() {
       <div><strong>4</strong><span>Voice training</span></div>
       <div><strong>5</strong><span>First memory</span></div>
     </div>
-    <form class="onboarding-form" id="onboarding-form">
+    <form class="onboarding-form" id="onboarding-form" data-testid="onboarding-form">
       <section class="card onboarding-section">
         <div class="onboarding-section-head"><span>01</span><div><h3>Founder identity</h3><p>How Mira should understand and address you.</p></div></div>
         <div class="form-grid">
@@ -414,7 +414,7 @@ function renderOnboarding() {
       </section>
       <div class="card onboarding-submit">
         <div><strong>Ready to enter the workspace?</strong><p class="muted small">You can edit all of this later in Settings. For now, this gives Mira enough context to start behaving like a content partner.</p></div>
-        <div class="onboarding-actions"><button class="button">Complete setup</button><button type="button" class="button ghost" id="skip-onboarding">Use starter context for now</button></div>
+        <div class="onboarding-actions"><button class="button" data-testid="complete-onboarding">Complete setup</button><button type="button" class="button ghost" id="skip-onboarding">Use starter context for now</button></div>
       </div>
     </form>
   </section>`;
@@ -510,14 +510,14 @@ function renderChat() {
         <div class="card"><div class="card-head"><h3>This week</h3><span class="badge ${published >= goal ? "published" : "pending"}">${published}/${goal} posts</span></div><div class="metric">${Math.min(Math.round((published / goal) * 100), 100)}%</div><div class="progress"><span style="width:${Math.min((published / goal) * 100, 100)}%"></span></div><div class="muted small">Based on your ${escapeHtml(profile.posting_frequency.replaceAll("_", " "))} goal.</div></div>
         <div class="card"><div class="card-head"><h3>Content Bank</h3><span class="badge published">${ui.state.content_bank.length} entries</span></div><p class="muted">Your latest real-world context makes every draft more personal.</p><button class="button secondary" data-tab="bank">Add today’s insight</button></div>
       </div>
-      <div class="chat-stream" style="margin-top:18px">
+      <div class="chat-stream" data-testid="chat-stream" style="margin-top:18px">
         ${timeline}
         ${ui.loading ? '<div class="bubble mira typing"><strong>Mira</strong><br>Thinking through the angle…</div>' : ""}
       </div>
       <div class="composer">
         <form class="composer-box" id="chat-form">
-          <input class="input" id="chat-message" placeholder="Try: This week I noticed..." required minlength="2" />
-          <button class="button" ${ui.loading ? "disabled" : ""}>${ui.loading ? "Working…" : "Send"}</button>
+          <input class="input" id="chat-message" data-testid="chat-message" placeholder="Try: This week I noticed..." required minlength="2" />
+          <button class="button" data-testid="chat-send" ${ui.loading ? "disabled" : ""}>${ui.loading ? "Working…" : "Send"}</button>
         </form>
         ${currentDraftShortcut(activeDrafts)}
         <div class="prompt-row">
@@ -627,7 +627,7 @@ function angleActions(content = "") {
   if (!angles.length) return "";
   return `<div class="angle-actions">
     <div class="angle-actions-label">Turn an angle into a draft</div>
-    ${angles.map((angle, index) => `<button class="angle-action" data-angle-prompt="${escapeHtml(angle.prompt)}">
+    ${angles.map((angle, index) => `<button class="angle-action" data-testid="angle-action" data-angle-prompt="${escapeHtml(angle.prompt)}">
       <span>Draft angle ${index + 1}</span>
       <strong>${escapeHtml(angle.title)}</strong>
     </button>`).join("")}
@@ -639,16 +639,16 @@ function draftCard(post, compact = true) {
   const publishLabel = ui.integrations?.linkedin?.connected ? "Publish to LinkedIn" : "Copy & open LinkedIn";
   const content = post.content || "";
   const excerpt = escapeHtml(stripMarkdown(content).slice(0, 220));
-  return `<article class="draft-card compact" data-post="${post.id}">
+  return `<article class="draft-card compact" data-testid="draft-card" data-post="${post.id}">
     <div class="draft-meta"><span>Draft v${post.version} · ${post.source.replace("_", " ")} · ${escapeHtml(provider)}</span><span>${post.char_count} / 3,000</span></div>
-    <div class="draft-summary"><div><strong>Draft ready: ${escapeHtml(post.title || "Untitled draft")}</strong><p>${excerpt}${content.length > 220 ? "…" : ""}</p><button class="read-more" data-draft-review="${post.id}">Open draft workspace</button></div><span class="badge draft">pending review</span></div>
+    <div class="draft-summary"><div><strong>Draft ready: ${escapeHtml(post.title || "Untitled draft")}</strong><p>${excerpt}${content.length > 220 ? "…" : ""}</p><button class="read-more" data-testid="open-draft-workspace" data-draft-review="${post.id}">Open draft workspace</button></div><span class="badge draft">pending review</span></div>
     <div class="draft-actions">
-      <button class="button" data-draft-review="${post.id}">Review draft</button>
-      <button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>
-      <button class="button secondary" data-draft-action="linkedin" data-id="${post.id}">${publishLabel}</button>
+      <button class="button" data-testid="review-draft" data-draft-review="${post.id}">Review draft</button>
+      <button class="button" data-testid="approve-draft" data-draft-action="approve" data-id="${post.id}">Approve</button>
+      <button class="button secondary" data-testid="linkedin-handoff" data-draft-action="linkedin" data-id="${post.id}">${publishLabel}</button>
       <button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button>
       <button class="button ghost" data-draft-action="copy" data-id="${post.id}">Copy</button>
-      <button class="button ghost" data-draft-action="save" data-id="${post.id}">Save draft</button>
+      <button class="button ghost" data-testid="save-draft" data-draft-action="save" data-id="${post.id}">Save draft</button>
       <button class="button danger" data-draft-action="delete" data-id="${post.id}">Skip</button>
     </div>
   </article>`;
@@ -661,7 +661,7 @@ function draftReviewModal() {
   const provider = post.generation_provider || "template";
   const publishLabel = ui.integrations?.linkedin?.connected ? "Publish to LinkedIn" : "Copy & open LinkedIn";
   return `<div class="modal-backdrop draft-review-backdrop">
-    <div class="modal draft-review-modal">
+    <div class="modal draft-review-modal" data-testid="draft-review-modal">
       <div class="draft-review-header">
         <div>
           <div class="eyebrow">Draft workspace</div>
@@ -676,8 +676,8 @@ function draftReviewModal() {
         ${variantRail(post)}
       </div>
       <div class="draft-actions draft-review-actions">
-        <button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>
-        <button class="button secondary" data-draft-action="linkedin" data-id="${post.id}">${publishLabel}</button>
+        <button class="button" data-testid="approve-draft" data-draft-action="approve" data-id="${post.id}">Approve</button>
+        <button class="button secondary" data-testid="linkedin-handoff" data-draft-action="linkedin" data-id="${post.id}">${publishLabel}</button>
         <button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button>
         <button class="button ghost" data-draft-action="copy" data-id="${post.id}">Copy</button>
         <button class="button ghost" data-draft-action="save" data-id="${post.id}">Save draft</button>
@@ -794,7 +794,7 @@ function renderBank() {
       <h3>What happened today?</h3>
       <p class="muted small">Good entries are concrete: who/what happened, why it mattered, and what it changed in your thinking.</p>
       <div class="template-grid">${memoryTemplates.map(([id, icon, label]) => `<button class="template ${ui.selectedCategory === id ? "active" : ""}" data-category="${id}"><span>${icon}</span>${label}</button>`).join("")}</div>
-      <form id="bank-form"><textarea id="bank-text" placeholder="Example: We launched our first founder test today. The biggest lesson was that workflow ownership matters more than another writing prompt." required minlength="3"></textarea><button class="button" style="margin-top:10px">Save to Content Bank</button></form>
+      <form id="bank-form"><textarea id="bank-text" data-testid="bank-text" placeholder="Example: We launched our first founder test today. The biggest lesson was that workflow ownership matters more than another writing prompt." required minlength="3"></textarea><button class="button" data-testid="bank-save" style="margin-top:10px">Save to Content Bank</button></form>
     </div>
     <div class="list" style="margin-top:18px">
       ${ui.state.content_bank.length ? ui.state.content_bank.map(memoryCard).join("") : '<div class="empty">Your Content Bank is empty. Add the first moment above.</div>'}
@@ -883,7 +883,7 @@ function defaultCustomScheduleValue() {
 
 function renderLibrary() {
   const posts = filteredLibraryPosts();
-  return `<section class="page"><div class="eyebrow">Content pipeline</div><h1>Library</h1><p class="lead">Every draft, scheduled post, and published post stays visible here.</p>
+  return `<section class="page" data-testid="library-page"><div class="eyebrow">Content pipeline</div><h1>Library</h1><p class="lead">Every draft, scheduled post, and published post stays visible here.</p>
     ${libraryControls()}
     <div class="list">${posts.length ? posts.map(libraryItem).join("") : libraryEmptyState()}</div>
   </section>`;
@@ -942,10 +942,10 @@ function libraryItem(post) {
     ${expanded ? `<div class="library-full-draft draft-content markdown">${renderMarkdown(post.content || "")}</div>` : ""}
     ${qualityReviewPanel(post, true)}
     <div class="inline-actions">
-      <button class="button" data-draft-review="${post.id}">Open draft workspace</button>
+      <button class="button" data-testid="open-draft-workspace" data-draft-review="${post.id}">Open draft workspace</button>
       ${["pending", "draft", "saved"].includes(post.status) ? `<button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button><button class="button" data-draft-action="approve" data-id="${post.id}">Approve</button>` : ""}
       <button class="button ghost" data-draft-action="copy" data-id="${post.id}">Copy</button>
-      ${post.status !== "published" ? `<button class="button secondary" data-draft-action="linkedin" data-id="${post.id}">${ui.integrations?.linkedin?.connected ? "Publish to LinkedIn" : "Copy & open LinkedIn"}</button>` : ""}
+      ${post.status !== "published" ? `<button class="button secondary" data-testid="linkedin-handoff" data-draft-action="linkedin" data-id="${post.id}">${ui.integrations?.linkedin?.connected ? "Publish to LinkedIn" : "Copy & open LinkedIn"}</button>` : ""}
     </div>
   </div>`;
 }
@@ -964,7 +964,7 @@ function renderCalendar() {
     });
     cells.push(`<div class="day ${matches.length ? "has-post" : ""}"><strong>${day}</strong>${matches.map((post) => `<div class="small" style="margin-top:8px"><span class="dot ${post.status}"></span>${escapeHtml(post.schedule_label || post.status)}</div>`).join("")}</div>`);
   }
-  return `<section class="page"><div class="eyebrow">Schedule</div><h1>${now.toLocaleString("en", { month: "long" })} ${year}</h1><p class="lead">Green marks published content. Purple marks posts Mira has scheduled.</p>
+  return `<section class="page" data-testid="calendar-page"><div class="eyebrow">Schedule</div><h1>${now.toLocaleString("en", { month: "long" })} ${year}</h1><p class="lead">Green marks published content. Purple marks posts Mira has scheduled.</p>
     <div class="card calendar-card"><div class="calendar">${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((day) => `<div class="day-label">${day}</div>`).join("")}${cells.join("")}</div></div>
     <div class="list" style="margin-top:18px">${scheduled.length ? scheduled.map((post) => `<div class="list-item"><div class="list-top"><strong>${escapeHtml(post.title)}</strong><span class="badge ${post.status}">${post.status}</span></div><p>${escapeHtml(scheduleSummary(post))}</p></div>`).join("") : '<div class="empty">Nothing scheduled yet. Approve a draft to place it here.</div>'}</div>
   </section>`;
@@ -1391,7 +1391,7 @@ function showModalError(message) {
 }
 
 function showScheduleModal(id) {
-  ui.modal = `<div class="modal-backdrop"><div class="modal"><div class="modal-head"><h3>When should this post move forward?</h3><button class="icon-button" data-modal-close="true" aria-label="Close schedule modal">Close</button></div><p class="muted">Choose a testable scheduling state. For real LinkedIn publishing today, keep using Copy & open LinkedIn.</p>
+  ui.modal = `<div class="modal-backdrop"><div class="modal" data-testid="schedule-modal"><div class="modal-head"><h3>When should this post move forward?</h3><button class="icon-button" data-modal-close="true" aria-label="Close schedule modal">Close</button></div><p class="muted">Choose a testable scheduling state. For real LinkedIn publishing today, keep using Copy & open LinkedIn.</p>
     <div class="schedule-options">
       ${scheduleButton("now", "Post now", "Mark it as published inside Blidx.")}
       ${scheduleButton("later_today", "Later today", "Schedule for 5:30 PM in the profile timezone.")}
@@ -1420,7 +1420,7 @@ function showScheduleModal(id) {
 }
 
 function scheduleButton(type, title, description) {
-  return `<button class="schedule-option" data-schedule="${type}">
+  return `<button class="schedule-option" data-testid="schedule-option" data-schedule="${type}">
     <strong>${title}</strong>
     <span>${description}</span>
   </button>`;
@@ -1506,7 +1506,7 @@ function showLinkedInTrackingModal(id, handoff = {}) {
   const openStatus = handoff.opened
     ? "LinkedIn opened in a new tab."
     : "If LinkedIn did not open, use the button below.";
-  ui.modal = `<div class="modal-backdrop"><div class="modal"><div class="modal-head"><h3>Did you post it on LinkedIn?</h3><button class="icon-button" data-modal-close="true" aria-label="Close LinkedIn modal">Close</button></div>
+  ui.modal = `<div class="modal-backdrop"><div class="modal" data-testid="linkedin-modal"><div class="modal-head"><h3>Did you post it on LinkedIn?</h3><button class="icon-button" data-modal-close="true" aria-label="Close LinkedIn modal">Close</button></div>
     <p class="muted">${copyStatus} ${openStatus}</p>
     ${handoff.copied ? "" : `<textarea class="handoff-copy" readonly>${escapeHtml(handoff.content || "")}</textarea>`}
     <div class="linkedin-handoff-actions">
@@ -1516,7 +1516,7 @@ function showLinkedInTrackingModal(id, handoff = {}) {
     <p class="muted small">After publishing on LinkedIn, paste the post URL here. If you have not posted yet, choose Not yet and the draft stays available in Blidx.</p>
     <input class="input" id="linkedin-url" placeholder="https://www.linkedin.com/feed/update/..." />
     <div class="modal-status" data-modal-status></div>
-    <div class="modal-actions"><button class="button ghost" data-linkedin-defer="true">Not yet</button><button class="button" data-linkedin-track="${escapeHtml(id)}">Mark posted</button></div>
+    <div class="modal-actions"><button class="button ghost" data-testid="linkedin-not-yet" data-linkedin-defer="true">Not yet</button><button class="button" data-testid="linkedin-mark-posted" data-linkedin-track="${escapeHtml(id)}">Mark posted</button></div>
   </div></div>`;
   render();
 }

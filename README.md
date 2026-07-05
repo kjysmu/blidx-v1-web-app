@@ -65,6 +65,15 @@ The initial schema includes:
 pytest
 ```
 
+For browser-level QA of the full signup/onboarding/Content Bank/Mira/draft
+workflow:
+
+```bash
+pip install -r requirements-dev.txt
+python -m playwright install chromium
+pytest tests/test_e2e_browser.py
+```
+
 ## API routes
 
 ```txt
