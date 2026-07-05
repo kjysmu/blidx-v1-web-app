@@ -137,3 +137,108 @@ def test_authenticated_chat_draft_keeps_session():
     assert "draft_created" in payload["actions"]
     assert payload["state"]["auth"]["authenticated"] is True
     assert payload["state"]["auth"]["user_id"] == auth["user_id"]
+
+
+def test_authenticated_golden_path_end_to_end():
+    auth = register_user(name="Golden Path User")
+    headers = {"Authorization": f"Bearer {auth['access_token']}"}
+
+    onboarding = client.post(
+        "/api/onboarding/complete",
+        headers=headers,
+        json={
+            "first_name": "Golden",
+            "role": "Founder",
+            "company_name": "Blidx QA",
+            "company_website": "https://blidx.com",
+            "industry": "SaaS / AI",
+            "company_description": "Blidx QA helps founders turn real work moments into credible LinkedIn content.",
+            "audience": ["Founders", "Industry Peers"],
+            "expertise": ["AI", "Product Strategy"],
+            "content_types": ["Industry insights", "Personal stories"],
+            "posting_frequency": "3-4x_per_week",
+            "tone": "Insightful & measured",
+            "writing_style": "Specific, founder-led, reflective, and practical.",
+            "writing_samples": ["Content gets better when it starts from the work, not from a prompt."],
+            "preferred_structure": "Hook, real moment, lesson, question",
+            "avoided_phrases": ["game changer", "unlock"],
+            "cta_style": "Reflective question",
+            "first_memory": "This week I tested the Blidx golden path and noticed founders need strategy before drafting.",
+        },
+    )
+    assert onboarding.status_code == 200
+    assert onboarding.json()["onboarding_completed"] is True
+    assert len(onboarding.json()["content_bank"]) == 1
+
+    memory = client.post(
+        "/api/content-bank",
+        headers=headers,
+        json={
+            "category": "insights",
+            "raw_text": "A founder told me they do not need more AI writing; they need help choosing what is worth saying.",
+        },
+    )
+    assert memory.status_code == 200
+
+    strategy = client.post(
+        "/api/chat/message",
+        headers=headers,
+        json={"message": "I am thinking about a LinkedIn post on AI trust in healthcare"},
+    )
+    assert strategy.status_code == 200
+    strategy_payload = strategy.json()
+    assert strategy_payload["actions"] == ["reply"]
+    assert strategy_payload["post"] is None
+    assert "Strategic read" in strategy_payload["reply"]
+    assert "Best angle" in strategy_payload["reply"]
+
+    draft = client.post(
+        "/api/chat/message",
+        headers=headers,
+        json={"message": "Draft a post from my latest memory"},
+    )
+    assert draft.status_code == 200
+    draft_payload = draft.json()
+    assert "draft_created" in draft_payload["actions"]
+    post = draft_payload["post"]
+    assert post["status"] == "pending"
+    assert post["quality_review"]["max_score"] == 5
+    assert post["variants"]
+
+    edited = client.post(
+        f"/api/drafts/{post['id']}/edit",
+        headers=headers,
+        json={"instructions": "Make it shorter and more personal"},
+    )
+    assert edited.status_code == 200
+    assert edited.json()["version"] == 2
+
+    saved = client.post(f"/api/drafts/{post['id']}/save", headers=headers)
+    assert saved.status_code == 200
+    assert saved.json()["status"] == "saved"
+
+    approved = client.post(
+        f"/api/drafts/{post['id']}/approve",
+        headers=headers,
+        json={"schedule_type": "best_time"},
+    )
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "scheduled"
+    assert approved.json()["scheduled_at"]
+
+    publish = client.post(f"/api/drafts/{post['id']}/publish", headers=headers)
+    assert publish.status_code == 200
+    assert publish.json()["mode"] in {"manual_fallback", "linkedin"}
+
+    tracked = client.post(
+        f"/api/drafts/{post['id']}/track-linkedin-url",
+        headers=headers,
+        json={"url": "https://www.linkedin.com/feed/update/test"},
+    )
+    assert tracked.status_code == 200
+    assert tracked.json()["status"] == "published"
+
+    final_state = client.get("/api/state", headers=headers).json()
+    assert final_state["auth"]["authenticated"] is True
+    assert any(item["status"] == "published" for item in final_state["posts"])
+    assert any(item.get("published_at") for item in final_state["posts"])
