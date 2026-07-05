@@ -502,7 +502,7 @@ function renderChat() {
     <section class="page">
       <div class="eyebrow">Your content workdesk</div>
       <h1>Good ${new Date().getHours() < 12 ? "morning" : "afternoon"}, ${escapeHtml(profile.first_name)}.</h1>
-      <p class="lead">Chat with Mira like a content partner. Share a moment, ask for an angle, or say “Draft a post about…” and I’ll create a review-ready LinkedIn draft.</p>
+      <p class="lead">Mira now follows a clearer content workflow: capture a real moment, choose an angle, then create a review-ready LinkedIn draft.</p>
       ${miraBrief()}
       ${workflowGuide()}
       <div class="grid">
@@ -515,14 +515,14 @@ function renderChat() {
       </div>
       <div class="composer">
         <form class="composer-box" id="chat-form">
-          <input class="input" id="chat-message" placeholder="Message Mira… try: Draft a post about human connection versus AI in mental health" required minlength="2" />
+          <input class="input" id="chat-message" placeholder="Try: This week I noticed..." required minlength="2" />
           <button class="button" ${ui.loading ? "disabled" : ""}>${ui.loading ? "Working…" : "Send"}</button>
         </form>
         ${currentDraftShortcut(activeDrafts)}
         <div class="prompt-row">
           ${quickPrompt("What should I post about today?")}
           ${quickPrompt("Give me 3 angles from my Content Bank")}
-          ${quickPrompt("Draft a post from my latest memory")}
+          ${quickPrompt("Draft from my latest memory")}
           <button class="prompt-chip" type="button" data-action="qa-checkin">Daily check-in</button>
           <button class="prompt-chip" type="button" data-action="qa-progress">Progress</button>
         </div>

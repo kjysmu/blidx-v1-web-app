@@ -336,6 +336,41 @@ def test_mira_strategy_layer_critiques_ideas_without_drafting():
     client.post("/api/reset")
 
 
+def test_mira_saves_memory_then_guides_angle_choice():
+    client.post("/api/reset")
+
+    response = client.post(
+        "/api/chat/message",
+        json={
+            "message": "This week I spoke with a founder who said AI writing is easy, but knowing what is worth saying is hard.",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["actions"] == ["memory_saved", "angles_suggested"]
+    assert payload["post"] is None
+    assert len(payload["state"]["content_bank"]) == 1
+    assert "Step 1/4 captured" in payload["reply"]
+    assert "Step 2/4 choose the angle" in payload["reply"]
+    assert "1/ Specific moment" in payload["reply"]
+    assert "Reply with “angle 1”" in payload["reply"]
+
+    draft_response = client.post(
+        "/api/chat/message",
+        json={"message": "angle 2"},
+    )
+
+    assert draft_response.status_code == 200
+    draft_payload = draft_response.json()
+    assert "draft_created" in draft_payload["actions"]
+    assert draft_payload["post"]["status"] == "pending"
+    assert "Founder POV" in draft_payload["post"]["title"]
+    assert "angle 2" not in draft_payload["post"]["content"].lower()
+
+    client.post("/api/reset")
+
+
 def test_mira_understands_draft_follow_up_after_angle_prompt():
     client.post("/api/seed-test-scenario")
 

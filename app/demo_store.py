@@ -1,4 +1,5 @@
 import json
+import re
 import threading
 import uuid
 from copy import deepcopy
@@ -92,6 +93,13 @@ class DemoStore:
                     "kind": "message",
                 }
             ],
+            "mira_workflow": {
+                "stage": "capture",
+                "last_topic": None,
+                "last_angles": [],
+                "last_memory_id": None,
+                "updated_at": now,
+            },
             "linkedin": {
                 "connected": False,
                 "access_token": None,
@@ -321,21 +329,28 @@ class DemoStore:
                 self._write(state)
                 return {"reply": reply, "actions": ["redirect"], "post": None, "state": self._public_state(state)}
 
+            selected_angle_topic = self._topic_from_selected_angle(state, content)
             memory = None
-            if self._looks_like_memory(content) and not self._wants_draft(content):
+            if (
+                not selected_angle_topic
+                and self._looks_like_memory(content)
+                and not self._wants_draft(content)
+            ):
                 memory = self._memory_entry(content)
                 state["content_bank"].insert(0, memory)
 
             post = None
             wants_draft = self._wants_draft(content)
             followup_draft = self._is_affirmative_draft_request(state, content)
-            if wants_draft or followup_draft:
+            if selected_angle_topic or wants_draft or followup_draft:
                 topic = (
-                    self._topic_from_context(state, content if followup_draft else None)
+                    selected_angle_topic
+                    if selected_angle_topic
+                    else self._topic_from_context(state, content if followup_draft else None)
                     if followup_draft or self._wants_latest_context(content)
                     else self._extract_topic(content)
                 )
-                if not followup_draft and self._needs_context_before_drafting(state, topic):
+                if not selected_angle_topic and not followup_draft and self._needs_context_before_drafting(state, topic):
                     reply = self._context_request_reply(state, topic)
                     actions = ["context_requested"]
                     kind = "context_request"
@@ -350,12 +365,15 @@ class DemoStore:
                     actions = ["draft_created"]
                     kind = "draft_created"
                     post_id = post["id"]
+                    self._set_workflow(
+                        state,
+                        stage="review",
+                        last_topic=topic,
+                        selected_angle=selected_angle_topic,
+                    )
             elif memory:
-                reply = (
-                    "Saved that to your Content Bank. It has the shape of a personal insight, "
-                    "so I can use it as context for the next post. Want me to draft from this angle?"
-                )
-                actions = ["memory_saved"]
+                reply = self._memory_saved_strategy_reply(state, memory)
+                actions = ["memory_saved", "angles_suggested"]
                 kind = "message"
                 post_id = None
             else:
@@ -782,6 +800,12 @@ class DemoStore:
                 }
             ],
         )
+        workflow = state.setdefault("mira_workflow", {})
+        workflow.setdefault("stage", "capture")
+        workflow.setdefault("last_topic", None)
+        workflow.setdefault("last_angles", [])
+        workflow.setdefault("last_memory_id", None)
+        workflow.setdefault("updated_at", utc_now().isoformat())
         state.setdefault(
             "linkedin",
             {
@@ -866,6 +890,119 @@ class DemoStore:
             "content_potential": DemoStore._potential(raw_text),
             "created_at": utc_now().isoformat(),
         }
+
+    @staticmethod
+    def _set_workflow(state: dict, **updates: object) -> dict:
+        workflow = state.setdefault("mira_workflow", {})
+        workflow.update(updates)
+        workflow["updated_at"] = utc_now().isoformat()
+        return workflow
+
+    @staticmethod
+    def _angle_options(topic: str, latest: str, audience_label: str) -> list[dict]:
+        short_topic = DemoStore._short_topic(topic)
+        moment = latest or short_topic
+        return [
+            {
+                "id": "angle_1",
+                "title": "Specific moment",
+                "detail": f"Lead with the real scene behind “{short_topic}” and show what changed in your thinking.",
+                "prompt": f"Specific moment around {moment}: what changed in my thinking and why it matters for {audience_label}.",
+            },
+            {
+                "id": "angle_2",
+                "title": "Founder POV",
+                "detail": f"Turn it into a sharper opinion about what {audience_label} usually misunderstand.",
+                "prompt": f"Founder POV on {short_topic}: what most people misunderstand and what I now believe.",
+            },
+            {
+                "id": "angle_3",
+                "title": "Useful question",
+                "detail": "Make the post practical by ending with where the workflow, trust, or judgment breaks for the reader.",
+                "prompt": f"Useful question about {short_topic}: where the workflow, trust, or judgment breaks for the reader.",
+            },
+        ]
+
+    @staticmethod
+    def _remember_angle_options(
+        state: dict,
+        topic: str,
+        latest: str = "",
+        memory_id: str | None = None,
+    ) -> list[dict]:
+        profile = state.get("profile", {})
+        audience_label = ", ".join((profile.get("audience") or ["your audience"])[:3])
+        angles = DemoStore._angle_options(topic, latest, audience_label)
+        DemoStore._set_workflow(
+            state,
+            stage="angle_choice",
+            last_topic=topic,
+            last_angles=angles,
+            last_memory_id=memory_id,
+            selected_angle=None,
+        )
+        return angles
+
+    @staticmethod
+    def _memory_saved_strategy_reply(state: dict, memory: dict) -> str:
+        raw_text = memory.get("raw_text", "")
+        profile = state.get("profile", {})
+        audience_label = ", ".join((profile.get("audience") or ["your audience"])[:3])
+        angles = DemoStore._remember_angle_options(
+            state,
+            raw_text,
+            raw_text,
+            memory.get("id"),
+        )
+        angle_lines = "\n\n".join(
+            f"{index}/ {angle['title']}: {angle['detail']}"
+            for index, angle in enumerate(angles, start=1)
+        )
+        return (
+            "Step 1/4 captured: I saved this to your Content Bank.\n\n"
+            f"Why it matters for {audience_label}: it has a real scene, so the post can sound owned instead of AI-generated.\n\n"
+            "Step 2/4 choose the angle before drafting:\n\n"
+            f"{angle_lines}\n\n"
+            "Reply with “angle 1”, “angle 2”, or “angle 3”. I’ll draft from that choice next."
+        )
+
+    @staticmethod
+    def _topic_from_selected_angle(state: dict, content: str) -> str | None:
+        workflow = state.get("mira_workflow") or {}
+        angles = workflow.get("last_angles") or []
+        if not angles:
+            return None
+
+        lowered = content.lower().strip()
+        match = re.search(r"\b(?:angle|option|direction)\s*([123])\b", lowered)
+        if not match:
+            ordinal_map = {
+                "first": 1,
+                "second": 2,
+                "third": 3,
+            }
+            for word, number in ordinal_map.items():
+                if re.search(rf"\b{word}\b", lowered) and any(
+                    signal in lowered for signal in ("angle", "option", "direction", "draft")
+                ):
+                    match_index = number
+                    break
+            else:
+                return None
+        else:
+            match_index = int(match.group(1))
+
+        index = match_index - 1
+        if index < 0 or index >= len(angles):
+            return None
+        selected = angles[index]
+        DemoStore._set_workflow(
+            state,
+            stage="draft",
+            selected_angle=selected,
+            last_topic=selected.get("prompt") or selected.get("title"),
+        )
+        return selected.get("prompt") or selected.get("title")
 
     @staticmethod
     def _wants_draft(content: str) -> bool:
@@ -970,6 +1107,8 @@ class DemoStore:
             "write a post about",
             "create a post about",
             "make a post about",
+            "draft a linkedin post from this angle:",
+            "draft a post from this angle:",
             "turn this into a linkedin post:",
             "turn this into a post:",
             "linkedin post about",
@@ -1013,6 +1152,15 @@ class DemoStore:
 
     @staticmethod
     def _topic_from_context(state: dict, current_content: str | None = None) -> str:
+        workflow = state.get("mira_workflow") or {}
+        selected_angle = workflow.get("selected_angle") or {}
+        if selected_angle.get("prompt"):
+            return selected_angle["prompt"]
+        last_angles = workflow.get("last_angles") or []
+        if last_angles and workflow.get("stage") == "angle_choice":
+            first_angle = last_angles[0]
+            if first_angle.get("prompt"):
+                return first_angle["prompt"]
         if state.get("content_bank"):
             latest = state["content_bank"][0]["raw_text"]
             if "ai" in latest.lower() and "mental" in json.dumps(state.get("profile", {})).lower():
@@ -1412,6 +1560,8 @@ class DemoStore:
             "write a post about",
             "create a post about",
             "make a post about",
+            "draft a linkedin post from this angle:",
+            "draft a post from this angle:",
             "linkedin post about",
             "post about",
         )
@@ -1705,17 +1855,22 @@ class DemoStore:
         score, label, strengths, risks = DemoStore._strategy_score(topic, latest, audience)
         best_angle = DemoStore._best_strategy_angle(topic, latest)
         missing_detail = DemoStore._missing_strategy_detail(topic, latest)
+        angles = DemoStore._remember_angle_options(state, topic, latest)
+        angle_lines = "\n\n".join(
+            f"{index}/ {angle['title']}: {angle['detail']}"
+            for index, angle in enumerate(angles, start=1)
+        )
 
         return (
+            f"Step 2/4: choose the angle before drafting.\n\n"
             f"Strategic read: {label} ({score}/5).\n\n"
             f"Why it can work: {strengths}\n\n"
             f"Risk: {risks}\n\n"
             f"Best angle for {audience_label}: {best_angle}\n\n"
             "Three draftable directions:\n\n"
-            f"1/ Specific moment: Lead with the real scene behind “{DemoStore._short_topic(topic)}” and show what changed in your thinking.\n\n"
-            f"2/ Founder POV: Turn it into a sharper opinion about what {audience_label} usually misunderstand.\n\n"
-            "3/ Useful question: End by asking where the workflow, trust, or judgment breaks for the reader.\n\n"
-            f"Missing detail before I draft: {missing_detail}"
+            f"{angle_lines}\n\n"
+            f"Missing detail before I draft: {missing_detail}\n\n"
+            "Choose “angle 1”, “angle 2”, or “angle 3”, or send the missing detail first."
         )
 
     @staticmethod
