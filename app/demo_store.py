@@ -317,6 +317,8 @@ class DemoStore:
         content = content.strip()
         with self.lock:
             state = self._read()
+            intent = self._detect_chat_intent(content)
+            self._set_workflow(state, last_intent=intent)
             self._append_message(state, "user", content)
 
             if self._is_off_topic(content):
@@ -906,22 +908,51 @@ class DemoStore:
             {
                 "id": "angle_1",
                 "title": "Specific moment",
+                "framework": "field_note",
                 "detail": f"Lead with the real scene behind “{short_topic}” and show what changed in your thinking.",
                 "prompt": f"Specific moment around {moment}: what changed in my thinking and why it matters for {audience_label}.",
             },
             {
                 "id": "angle_2",
                 "title": "Founder POV",
+                "framework": "sharp_pov",
                 "detail": f"Turn it into a sharper opinion about what {audience_label} usually misunderstand.",
                 "prompt": f"Founder POV on {short_topic}: what most people misunderstand and what I now believe.",
             },
             {
                 "id": "angle_3",
                 "title": "Useful question",
+                "framework": "practical_note",
                 "detail": "Make the post practical by ending with where the workflow, trust, or judgment breaks for the reader.",
                 "prompt": f"Useful question about {short_topic}: where the workflow, trust, or judgment breaks for the reader.",
             },
         ]
+
+    @staticmethod
+    def _detect_chat_intent(content: str) -> str:
+        lowered = content.lower().strip()
+        if DemoStore._wants_draft(content):
+            return "draft"
+        if any(phrase in lowered for phrase in ("shorter", "revise", "edit", "improve", "change", "make it")):
+            return "revise"
+        if any(phrase in lowered for phrase in ("angle", "angles", "idea", "ideas", "topic", "what should")):
+            return "strategy"
+        if DemoStore._looks_like_memory(content):
+            return "capture"
+        if any(phrase in lowered for phrase in ("how does this work", "what can you do", "help me")):
+            return "product_help"
+        return "chat"
+
+    @staticmethod
+    def _framework_label(framework: str | None) -> str:
+        labels = {
+            "field_note": "field note",
+            "sharp_pov": "sharp founder POV",
+            "practical_note": "practical framework",
+            "story_observation": "story-led observation",
+            "contrarian_take": "contrarian take",
+        }
+        return labels.get(framework or "", "field note")
 
     @staticmethod
     def _remember_angle_options(
@@ -955,7 +986,7 @@ class DemoStore:
             memory.get("id"),
         )
         angle_lines = "\n\n".join(
-            f"{index}/ {angle['title']}: {angle['detail']}"
+            f"{index}/ {angle['title']}: {angle['detail']} Framework: {DemoStore._framework_label(angle.get('framework'))}."
             for index, angle in enumerate(angles, start=1)
         )
         return (
@@ -1001,6 +1032,7 @@ class DemoStore:
             stage="draft",
             selected_angle=selected,
             last_topic=selected.get("prompt") or selected.get("title"),
+            draft_framework=selected.get("framework"),
         )
         return selected.get("prompt") or selected.get("title")
 
@@ -1271,9 +1303,9 @@ class DemoStore:
             "variants": DemoStore._draft_variants(state, topic, content[:3000]),
             "selected_variant_id": "main",
             "message": (
-                f"{first_name}, I used Claude with your profile and Content Bank context."
+                f"{first_name}, I used Claude with your profile, Content Bank context, and the {DemoStore._framework_label(DemoStore._fallback_style(state, topic))} framework."
                 if provider != "template"
-                else f"{first_name}, I used your profile and freshest context for this angle."
+                else f"{first_name}, I used your profile, freshest context, and the {DemoStore._framework_label(DemoStore._fallback_style(state, topic))} framework for this angle."
             ),
         }
         post["quality_review"] = DemoStore._quality_review(state, post)
@@ -1593,6 +1625,33 @@ class DemoStore:
                 f"{closing}"
             )
 
+        if style == "story_observation":
+            company_line = (
+                f"It is the kind of moment I want {company} to help founders preserve."
+                if use_company
+                else "It is the kind of moment founders often forget to preserve."
+            )
+            return (
+                f"I would not start a post about {hook} with a big claim.\n\n"
+                "I would start smaller.\n\n"
+                f"{personal_block}\n\n"
+                "That is the useful part: not the topic itself, but the moment that made the topic feel real.\n\n"
+                f"{company_line}\n\n"
+                f"For {audience}, this is usually where the stronger post begins: with the observation before the conclusion.\n\n"
+                f"{closing}"
+            )
+
+        if style == "contrarian_take":
+            return (
+                f"The obvious post about {hook} is probably not the best one.\n\n"
+                "The obvious post explains why the topic matters.\n\n"
+                "The better post shows what most people are missing.\n\n"
+                f"{personal_block}\n\n"
+                "That is the tension I would write from: the gap between the broad conversation and the real decision happening inside the work.\n\n"
+                f"For {audience}, the value is not another polished opinion. It is a sharper reason to reconsider the default answer.\n\n"
+                f"{closing}"
+            )
+
         return (
             f"One thing I would not outsource too quickly: the judgment behind {hook}.\n\n"
             f"{personal_block}\n\n"
@@ -1607,8 +1666,20 @@ class DemoStore:
 
     @staticmethod
     def _fallback_style(state: dict, topic: str) -> str:
+        workflow = state.get("mira_workflow") or {}
+        selected_angle = workflow.get("selected_angle") or {}
+        if selected_angle.get("framework"):
+            return selected_angle["framework"]
+        if workflow.get("draft_framework"):
+            return workflow["draft_framework"]
+        recommended = DemoStore._recommended_framework(
+            topic,
+            state.get("content_bank", [{}])[0].get("raw_text", "") if state.get("content_bank") else "",
+        )
+        if recommended:
+            return recommended
         seed = len(topic) + len(state.get("posts", [])) + len(state.get("messages", []))
-        styles = ("field_note", "sharp_pov", "practical_note")
+        styles = ("field_note", "sharp_pov", "practical_note", "story_observation", "contrarian_take")
         return styles[seed % len(styles)]
 
     @staticmethod
@@ -1846,10 +1917,18 @@ class DemoStore:
         memories = [memory] if memory else []
         writing_samples = profile.get("writing_samples") or []
         avoided = profile.get("avoided_phrases") or []
+        framework = DemoStore._fallback_style(state, topic)
 
         return "\n\n".join(
             [
                 "TASK\n" f"Draft a LinkedIn post about: {topic.strip()}",
+                "DRAFT STRATEGY\n"
+                f"Use this framework: {DemoStore._framework_label(framework)}.\n"
+                "If the framework is field note, lead with a concrete scene or observation.\n"
+                "If it is sharp founder POV, name what the audience misunderstands.\n"
+                "If it is practical framework, make the steps useful without sounding like a generic listicle.\n"
+                "If it is story-led observation, keep the post smaller and more human.\n"
+                "If it is contrarian take, show the better disagreement without being performative.",
                 "USER PROFILE\n" + json.dumps(profile, indent=2),
                 "VOICE CONTROLS\n"
                 f"Preferred structure: {profile.get('preferred_structure') or 'Not specified'}\n"
@@ -1901,10 +1980,12 @@ class DemoStore:
             "ask for one concrete detail before drafting. Respect the user's voice controls."
         )
         messages = state.get("messages", [])[-8:]
+        workflow = state.get("mira_workflow", {})
         prompt = "\n\n".join(
             [
                 "USER PROFILE\n" + json.dumps(state.get("profile", {}), indent=2),
                 "CONTENT BANK\n" + json.dumps(state.get("content_bank", [])[:5], indent=2),
+                "MIRA WORKFLOW STATE\n" + json.dumps(workflow, indent=2),
                 "RECENT CHAT\n" + json.dumps(messages, indent=2),
                 "LATEST USER MESSAGE\n" + content,
             ]
@@ -1929,8 +2010,9 @@ class DemoStore:
         best_angle = DemoStore._best_strategy_angle(topic, latest)
         missing_detail = DemoStore._missing_strategy_detail(topic, latest)
         angles = DemoStore._remember_angle_options(state, topic, latest)
+        recommended_framework = DemoStore._recommended_framework(topic, latest, score)
         angle_lines = "\n\n".join(
-            f"{index}/ {angle['title']}: {angle['detail']}"
+            f"{index}/ {angle['title']}: {angle['detail']} Framework: {DemoStore._framework_label(angle.get('framework'))}."
             for index, angle in enumerate(angles, start=1)
         )
 
@@ -1940,6 +2022,8 @@ class DemoStore:
             f"Why it can work: {strengths}\n\n"
             f"Risk: {risks}\n\n"
             f"Best angle for {audience_label}: {best_angle}\n\n"
+            f"Recommended draft framework: {DemoStore._framework_label(recommended_framework)}.\n\n"
+            "Mira judgment: I would not draft this as a generic thought-leadership post. I would keep one concrete moment visible and let the opinion come from that.\n\n"
             "Three draftable directions:\n\n"
             f"{angle_lines}\n\n"
             f"Missing detail before I draft: {missing_detail}\n\n"
@@ -2034,6 +2118,19 @@ class DemoStore:
         if latest:
             return "open with the lived moment, then name the lesson it revealed."
         return "turn the broad topic into one specific founder decision, mistake, or observation."
+
+    @staticmethod
+    def _recommended_framework(topic: str, latest: str = "", score: int = 3) -> str:
+        text = f"{topic} {latest}".lower()
+        if latest and any(word in text for word in ("spoke", "met", "event", "this week", "noticed", "learned")):
+            return "field_note"
+        if any(word in text for word in ("wrong", "misunderstand", "myth", "problem", "versus", "not")):
+            return "sharp_pov"
+        if any(word in text for word in ("how", "workflow", "steps", "framework", "process")):
+            return "practical_note"
+        if score <= 2:
+            return "story_observation"
+        return "field_note"
 
     @staticmethod
     def _missing_strategy_detail(topic: str, latest: str = "") -> str:

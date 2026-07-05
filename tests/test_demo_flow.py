@@ -310,6 +310,8 @@ def test_mira_fallback_varies_chat_replies_and_offers_angles():
     assert "Strategic read" in second["reply"]
     assert "Best angle" in second["reply"]
     assert "Missing detail" in second["reply"]
+    assert "Recommended draft framework" in second["reply"]
+    assert "Mira judgment" in second["reply"]
 
     client.post("/api/reset")
 
@@ -332,6 +334,8 @@ def test_mira_strategy_layer_critiques_ideas_without_drafting():
     assert "Best angle" in payload["reply"]
     assert "Best angle for" in payload["reply"]
     assert "Missing detail" in payload["reply"]
+    assert "Recommended draft framework" in payload["reply"]
+    assert "Mira judgment" in payload["reply"]
 
     client.post("/api/reset")
 
@@ -354,6 +358,7 @@ def test_mira_saves_memory_then_guides_angle_choice():
     assert "Step 1/4 captured" in payload["reply"]
     assert "Step 2/4 choose the angle" in payload["reply"]
     assert "1/ Specific moment" in payload["reply"]
+    assert "Framework: field note" in payload["reply"]
     assert "Reply with “angle 1”" in payload["reply"]
 
     draft_response = client.post(
@@ -367,6 +372,43 @@ def test_mira_saves_memory_then_guides_angle_choice():
     assert draft_payload["post"]["status"] == "pending"
     assert "Founder POV" in draft_payload["post"]["title"]
     assert "angle 2" not in draft_payload["post"]["content"].lower()
+
+    client.post("/api/reset")
+
+
+def test_selected_angle_controls_draft_framework():
+    client.post("/api/reset")
+    client.post(
+        "/api/chat/message",
+        json={
+            "message": "This week I spoke with a founder who said content tools keep promising speed, but the real problem is judgment.",
+        },
+    )
+
+    first_angle = client.post(
+        "/api/chat/message",
+        json={"message": "angle 1"},
+    ).json()
+
+    assert "draft_created" in first_angle["actions"]
+    assert "field note framework" in first_angle["post"]["message"]
+    assert "A small note from this week" in first_angle["post"]["content"]
+
+    client.post("/api/reset")
+    client.post(
+        "/api/chat/message",
+        json={
+            "message": "This week I spoke with a founder who said content tools keep promising speed, but the real problem is judgment.",
+        },
+    )
+    second_angle = client.post(
+        "/api/chat/message",
+        json={"message": "angle 2"},
+    ).json()
+
+    assert "draft_created" in second_angle["actions"]
+    assert "sharp founder POV framework" in second_angle["post"]["message"]
+    assert "I do not think that is quite right" in second_angle["post"]["content"]
 
     client.post("/api/reset")
 
