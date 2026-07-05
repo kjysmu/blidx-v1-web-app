@@ -723,6 +723,14 @@ function workflowGuide() {
   const hasDraft = ui.state.posts.some((post) => post.status === "pending");
   const hasLibrary = ui.state.posts.some((post) => post.status !== "deleted");
   const hasScheduled = ui.state.posts.some((post) => ["scheduled", "published"].includes(post.status));
+  const completedCount = [hasMemory, hasDraft || hasLibrary, hasLibrary, hasScheduled].filter(Boolean).length;
+  const nextAction = !hasMemory
+    ? "Start by adding one real memory."
+    : !(hasDraft || hasLibrary)
+      ? "Ask Mira to draft from the latest memory."
+      : !hasScheduled
+        ? "Open the draft workspace and approve, save, copy, or skip."
+        : "Check Library, Calendar, and Progress for the final state.";
   const items = [
     ["Save one real moment to Content Bank", hasMemory],
     ["Generate one review-ready draft", hasDraft || hasLibrary],
@@ -730,8 +738,10 @@ function workflowGuide() {
     ["Check Library, Calendar, and Progress states", hasScheduled],
   ];
   return `<div class="card workflow-card">
-    <div class="card-head"><div><h3>Today’s workflow</h3><p class="muted small">A guided path for testing the current product flow with real workspace data.</p></div><span class="badge ${hasMemory ? "published" : "draft"}">${hasMemory ? "in progress" : "start here"}</span></div>
+    <div class="card-head"><div><h3>Golden path test</h3><p class="muted small">Use this as the main QA path: onboarding → Content Bank → Mira → draft → review → Library/Calendar.</p></div><span class="badge ${completedCount === items.length ? "published" : hasMemory ? "scheduled" : "draft"}">${completedCount}/${items.length} done</span></div>
+    <div class="golden-progress"><span style="width:${Math.round((completedCount / items.length) * 100)}%"></span></div>
     <div class="checklist">${items.map(([label, done]) => `<div class="check ${done ? "done" : ""}"><span>${done ? "✓" : "○"}</span>${label}</div>`).join("")}</div>
+    <div class="next-action"><strong>Next best action</strong><span>${escapeHtml(nextAction)}</span></div>
     <div class="workflow-actions">
       <button class="button" data-tab="bank">${hasMemory ? "Add another memory" : "Add first memory"}</button>
       <button class="button secondary" data-action="sample-draft" ${hasMemory ? "" : "disabled"}>Draft from latest memory</button>
@@ -923,7 +933,7 @@ function renderCalendar() {
     cells.push(`<div class="day ${matches.length ? "has-post" : ""}"><strong>${day}</strong>${matches.map((post) => `<div class="small" style="margin-top:8px"><span class="dot ${post.status}"></span>${escapeHtml(post.schedule_label || post.status)}</div>`).join("")}</div>`);
   }
   return `<section class="page"><div class="eyebrow">Schedule</div><h1>${now.toLocaleString("en", { month: "long" })} ${year}</h1><p class="lead">Green marks published content. Purple marks posts Mira has scheduled.</p>
-    <div class="card"><div class="calendar">${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((day) => `<div class="day-label">${day}</div>`).join("")}${cells.join("")}</div></div>
+    <div class="card calendar-card"><div class="calendar">${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((day) => `<div class="day-label">${day}</div>`).join("")}${cells.join("")}</div></div>
     <div class="list" style="margin-top:18px">${scheduled.length ? scheduled.map((post) => `<div class="list-item"><div class="list-top"><strong>${escapeHtml(post.title)}</strong><span class="badge ${post.status}">${post.status}</span></div><p>${escapeHtml(scheduleSummary(post))}</p></div>`).join("") : '<div class="empty">Nothing scheduled yet. Approve a draft to place it here.</div>'}</div>
   </section>`;
 }

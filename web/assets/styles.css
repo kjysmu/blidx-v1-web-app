@@ -16,6 +16,7 @@
 }
 
 * { box-sizing: border-box; }
+html { overflow-x: hidden; }
 body {
   margin: 0;
   min-height: 100vh;
@@ -25,6 +26,7 @@ body {
     radial-gradient(circle at 85% 90%, rgba(73, 155, 116, .11), transparent 32%),
     var(--paper);
   font-family: "DM Sans", sans-serif;
+  overflow-x: hidden;
 }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
@@ -76,7 +78,7 @@ button { cursor: pointer; }
   background: white; font-size: 12px; color: var(--muted); line-height: 1.5;
 }
 .side-note strong { display: block; color: var(--ink); margin-bottom: 3px; }
-.main { min-width: 0; }
+.main { min-width: 0; overflow-x: hidden; }
 .topbar {
   height: 78px; padding: 0 34px;
   display: flex; align-items: center; justify-content: space-between;
@@ -135,8 +137,27 @@ h1 { margin-top: 7px; font-family: "Playfair Display"; font-size: clamp(30px, 5v
 .card {
   background: var(--card); border: 1px solid var(--line); border-radius: 18px;
   padding: 20px; box-shadow: 0 4px 20px rgba(30,25,50,.035);
+  min-width: 0;
 }
 .workflow-card { margin-bottom: 18px; border-color: #cfc8f0; background: linear-gradient(135deg, #fff, #faf9ff); }
+.golden-progress {
+  height: 8px; overflow: hidden; border-radius: 999px;
+  background: #eeeaf4; margin: -2px 0 14px;
+}
+.golden-progress span {
+  display: block; height: 100%; border-radius: inherit;
+  background: linear-gradient(90deg, var(--purple), #897ddd);
+}
+.next-action {
+  display: flex; justify-content: space-between; gap: 12px; align-items: center;
+  margin: 0 0 14px; padding: 11px 12px; border: 1px dashed #d8d1f4;
+  border-radius: 13px; background: white;
+}
+.next-action strong {
+  color: var(--purple); font-size: 12px; text-transform: uppercase;
+  letter-spacing: .08em; white-space: nowrap;
+}
+.next-action span { color: var(--muted); font-size: 13px; line-height: 1.35; }
 .mira-brief {
   display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.35fr);
   gap: 16px; align-items: stretch;
@@ -173,6 +194,7 @@ h1 { margin-top: 7px; font-family: "Playfair Display"; font-size: clamp(30px, 5v
 .button {
   border: 0; border-radius: 12px; padding: 11px 16px; font-weight: 700;
   background: var(--purple); color: white;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
 }
 .button.secondary { background: var(--purple-soft); color: var(--purple); }
 .button.ghost { background: white; color: var(--ink); border: 1px solid var(--line); }
@@ -182,6 +204,7 @@ h1 { margin-top: 7px; font-family: "Playfair Display"; font-size: clamp(30px, 5v
 .input, textarea, select {
   width: 100%; border: 1px solid var(--line); border-radius: 12px;
   background: white; padding: 12px 14px; outline: none; color: var(--ink);
+  min-width: 0;
 }
 .input:focus, textarea:focus, select:focus { border-color: #9b91dd; box-shadow: 0 0 0 3px var(--purple-soft); }
 textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
@@ -307,6 +330,7 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .list { display: grid; gap: 11px; }
 .list-item {
   padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: white;
+  min-width: 0;
 }
 .list-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; }
 .list-item p { color: var(--muted); margin: 7px 0 0; line-height: 1.5; }
@@ -387,6 +411,7 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 }
 .custom-schedule label { grid-column: 1 / -1; color: var(--muted); font-size: 12px; font-weight: 800; }
 .calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.calendar-card { overflow: hidden; }
 .day-label { text-align: center; font-size: 11px; color: var(--muted); padding: 7px; }
 .day { min-height: 86px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: white; font-size: 12px; }
 .day.has-post { border-color: #b8afe8; }
@@ -551,7 +576,13 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .top-actions .icon-button { padding: 0 9px; font-size: 12px; }
   .top-actions .primary-quick { font-size: 17px; }
   .quick-actions-menu { position: fixed; right: 14px; top: 72px; }
-  .page { padding: 24px 18px; }
+  .page { padding: 24px 16px; max-width: 100%; }
+  h1 { font-size: clamp(28px, 9vw, 38px); }
+  .lead { margin-bottom: 20px; }
+  .card { padding: 16px; border-radius: 16px; }
+  .workflow-card, .mira-brief { padding: 15px; }
+  .next-action { display: grid; gap: 5px; }
+  .next-action strong { white-space: normal; }
   .auth-page { display: block; padding: 22px 16px; }
   .auth-hero { padding: 10px 2px 18px; }
   .auth-brand { margin-bottom: 28px; }
@@ -586,14 +617,24 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .chat-stream { margin-bottom: 210px; }
   .bubble, .draft-card { scroll-margin-bottom: 230px; }
   .bubble { max-width: 100%; }
-  .composer { left: 0; margin: 0; width: 100%; padding: 14px 14px 82px; }
-  .composer-box { align-items: stretch; }
+  .composer { left: 0; margin: 0; width: 100%; padding: 14px 12px calc(82px + env(safe-area-inset-bottom)); }
+  .composer-box { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; }
+  .composer-box input { min-width: 0; font-size: 16px; }
   .composer-box .button { padding: 10px 12px; }
+  .current-draft-shortcut { display: grid; align-items: start; }
   .list-top, .draft-summary, .quality-head, .draft-meta {
     display: grid; grid-template-columns: 1fr; gap: 9px;
   }
   .badge-row { justify-content: flex-start; }
-  .inline-actions .button, .draft-actions .button { flex: 1 1 auto; }
+  .workflow-actions .button,
+  .inline-actions .button,
+  .draft-actions .button,
+  .onboarding-actions .button {
+    width: 100%; flex: 1 1 100%;
+  }
+  .draft-actions { padding: 13px; }
+  .draft-content { padding: 16px; }
+  .draft-review-body .draft-content { padding: 18px; }
   .modal-backdrop { padding: 12px; align-items: start; overflow: auto; }
   .modal { border-radius: 16px; padding: 18px; }
   .draft-review-modal { max-height: none; }
@@ -609,7 +650,8 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .mobile-nav button span { display: block; font-size: 18px; margin-bottom: 3px; }
   .mobile-nav button.active { color: var(--purple); }
   .quick-form { flex-direction: column; }
-  .calendar { gap: 3px; }
-  .day { min-height: 66px; padding: 5px; }
+  .calendar-card { overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 12px; }
+  .calendar { min-width: 620px; gap: 4px; }
+  .day { min-height: 76px; padding: 6px; }
   .toast { left: 16px; right: 16px; bottom: 84px; text-align: center; }
 }
