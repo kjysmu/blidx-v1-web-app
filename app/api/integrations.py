@@ -28,6 +28,11 @@ def integration_status() -> dict:
             "configured": bool(settings.ANTHROPIC_API_KEY),
             "model": settings.ANTHROPIC_MODEL,
         },
+        "database": {
+            "storage": "postgres" if settings.USE_DATABASE_STORAGE else "file",
+            "configured": bool(settings.DATABASE_URL),
+            "persistent_auth": bool(settings.USE_DATABASE_STORAGE and settings.DATABASE_URL),
+        },
         "linkedin": {
             "configured": linkedin.configured,
             "connected": bool(linkedin_state.get("connected")),

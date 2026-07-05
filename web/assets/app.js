@@ -803,8 +803,10 @@ function renderSettings() {
   const anthropic = ui.integrations?.anthropic;
   const linkedin = ui.integrations?.linkedin;
   const payloadcms = ui.integrations?.payloadcms;
+  const database = ui.integrations?.database;
   const linkedinBadge = linkedin?.connected ? "Connected" : linkedin?.configured ? "OAuth configured" : "Fallback ready";
   const linkedinClass = linkedin?.connected ? "published" : linkedin?.configured ? "scheduled" : "draft";
+  const databaseIsPostgres = database?.storage === "postgres";
   return `<section class="page"><div class="eyebrow">Personalization</div><h1>Settings</h1><p class="lead">These details are loaded fresh whenever Mira creates a draft.</p>
     ${productReadinessPanel()}
     ${ui.notice ? `<div class="notice">${escapeHtml(ui.notice)}</div>` : ""}
@@ -826,6 +828,7 @@ function renderSettings() {
       <div class="field full"><button class="button">Save profile</button> <button type="button" class="button ghost" id="reset-demo">Reset workspace data</button></div>
     </form>
     <div class="card" style="margin-top:16px"><div class="card-head"><h3>AI generation</h3><span class="badge ${anthropic?.configured ? "published" : "draft"}">${anthropic?.configured ? "Claude ready" : "Local fallback"}</span></div><p class="muted">${anthropic?.configured ? `Mira drafts use ${escapeHtml(anthropic.model)} with profile, writing samples, voice controls, and Content Bank context.` : "Add ANTHROPIC_API_KEY in Render to enable live Claude generation. The local fallback still uses your CTA style and avoids generic repeated templates."}</p></div>
+    <div class="card" style="margin-top:16px"><div class="card-head"><h3>Database storage</h3><span class="badge ${databaseIsPostgres ? "published" : "draft"}">${databaseIsPostgres ? "Postgres active" : "File storage"}</span></div><p class="muted">${databaseIsPostgres ? "Signup, login, and workspace state are using the configured Render Postgres database." : "This staging app is still using MVP file-backed storage. Set USE_DATABASE_STORAGE=true and DATABASE_URL in Render to switch to Postgres."}</p></div>
     <div class="card" style="margin-top:16px"><div class="card-head"><h3>LinkedIn</h3><span class="badge ${linkedinClass}">${linkedinBadge}</span></div><p class="muted">${linkedin?.connected ? "LinkedIn is connected for this staging session. Draft cards can publish directly." : linkedin?.configured ? "OAuth URL generation is available. The redirect URL must exactly match the LinkedIn app settings; otherwise use the manual fallback." : "Use Copy & open LinkedIn on any draft. For full OAuth on staging, add the Render URL to LinkedIn redirect URLs or route app.blidx.com to this service."}</p>${linkedin?.connected ? "" : '<button class="button secondary" id="connect-linkedin">Connect LinkedIn</button>'}</div>
     <div class="card" style="margin-top:16px"><div class="card-head"><h3>PayloadCMS review</h3><span class="badge draft">${escapeHtml(payloadcms?.recommendation || "defer")}</span></div><p class="muted">${escapeHtml(payloadcms?.reason || "PayloadCMS review pending.")}</p></div>
   </section>`;
