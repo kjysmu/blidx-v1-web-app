@@ -647,6 +647,16 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .settings-row-action { color: var(--faint); font-size: 22px; line-height: 1; }
+.settings-profile-card .form-grid { margin-top: 16px; }
+.settings-profile-intro {
+  display: flex; justify-content: space-between; gap: 12px; align-items: flex-start;
+  margin-bottom: 4px;
+}
+.settings-profile-intro p { margin: 5px 0 0; }
+.settings-action-row { align-items: center; }
+.settings-inline-button {
+  min-width: 82px; padding: 9px 12px; border-radius: 999px;
+}
 .linkedin-status-card {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 12px; align-items: center; padding: 16px;
@@ -678,18 +688,6 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 }
 .toggle.on { background: var(--purple); }
 .toggle.on::after { transform: translateX(18px); }
-.settings-edit-card { margin-top: 20px; }
-.settings-edit-card summary {
-  cursor: pointer; color: var(--purple); font-weight: 900;
-  list-style: none;
-}
-.settings-edit-card summary::-webkit-details-marker { display: none; }
-.settings-edit-card summary::after {
-  content: "›"; float: right; color: var(--faint); font-size: 24px;
-  transform: rotate(90deg);
-}
-.settings-edit-card[open] summary::after { transform: rotate(270deg); }
-.settings-edit-card form { margin-top: 16px; }
 .settings-system { margin-top: 24px; }
 .settings-version {
   padding: 20px 16px; text-align: center;
@@ -744,10 +742,11 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 }
 
 @media (max-width: 760px) {
-  body { background: #e8e7e3; }
+  body { background: var(--paper); }
   .shell {
-    display: block; width: min(375px, 100%); min-height: 100dvh;
-    margin: 0 auto; padding-bottom: calc(78px + env(safe-area-inset-bottom)); overflow-x: hidden;
+    display: block; width: 100%; min-height: 100dvh;
+    margin: 0; padding-bottom: calc(78px + env(safe-area-inset-bottom)); overflow-x: hidden;
+    box-shadow: none;
   }
   .sidebar { display: none; }
   .topbar {
@@ -819,6 +818,13 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
     border-radius: 13px;
   }
   .readiness-grid { grid-template-columns: 1fr; }
+  .settings-profile-intro {
+    display: grid;
+    gap: 8px;
+  }
+  .settings-profile-card .form-grid {
+    grid-template-columns: 1fr;
+  }
   .settings-row {
     grid-template-columns: auto minmax(0, 1fr) auto;
     padding: 13px 14px;
@@ -828,6 +834,13 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
     grid-template-columns: auto minmax(0, 1fr);
   }
   .li-action {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .settings-action-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .settings-inline-button {
     grid-column: 1 / -1;
     width: 100%;
   }
@@ -842,7 +855,7 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .bubble { max-width: 88%; font-size: 14px; padding: 10px 13px; }
   .chat-stream .draft-card { max-width: 100%; margin-left: 0; }
   .composer {
-    left: 50%; transform: translateX(-50%); margin: 0; width: min(375px, 100%);
+    left: 0; right: 0; transform: none; margin: 0; width: 100%;
     padding: 9px 12px calc(74px + env(safe-area-inset-bottom));
     background: linear-gradient(transparent, var(--paper) 24%);
     z-index: 28;
@@ -897,8 +910,8 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   .prompt-row { display: none; }
   .mobile-nav {
     position: fixed; display: grid; grid-template-columns: repeat(5, 1fr);
-    left: 50%; right: auto; transform: translateX(-50%);
-    bottom: 0; width: min(375px, 100%); height: 68px; z-index: 30;
+    left: 0; right: 0; transform: none;
+    bottom: 0; width: 100%; height: 68px; z-index: 30;
     background: rgba(255,255,255,.96); border-top: .5px solid var(--line-soft); backdrop-filter: blur(14px);
   }
   .mobile-nav button { border: 0; background: transparent; color: var(--muted); font-size: 10px; font-weight: 700; }

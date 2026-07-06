@@ -1218,17 +1218,6 @@ function productReadinessPanel() {
   </div>`;
 }
 
-function summarizeList(values = [], fallback = "Not set") {
-  const cleaned = values.filter(Boolean);
-  if (!cleaned.length) return fallback;
-  return cleaned.slice(0, 3).join(", ") + (cleaned.length > 3 ? ` +${cleaned.length - 3}` : "");
-}
-
-function savedStatus(value, savedLabel = "Saved", fallback = "Not set") {
-  if (Array.isArray(value)) return value.length ? savedLabel : fallback;
-  return String(value || "").trim() ? savedLabel : fallback;
-}
-
 function settingsSection(title, rows) {
   return `<div class="settings-section">
     <div class="settings-header">${escapeHtml(title)}</div>
@@ -1236,14 +1225,14 @@ function settingsSection(title, rows) {
   </div>`;
 }
 
-function settingsRow(icon, tone, label, value, action = "Edit") {
+function settingsRow(icon, tone, label, value, action = "") {
   return `<div class="settings-row">
     <div class="settings-row-icon ${escapeHtml(tone)}">${escapeHtml(icon)}</div>
     <div class="settings-row-body">
       <div class="settings-row-label">${escapeHtml(label)}</div>
       ${value ? `<div class="settings-row-value">${escapeHtml(value)}</div>` : ""}
     </div>
-    <div class="settings-row-action">${escapeHtml(action)}</div>
+    ${action ? `<div class="settings-row-action">${escapeHtml(action)}</div>` : ""}
   </div>`;
 }
 
@@ -1258,6 +1247,38 @@ function toggleRow(icon, label, value, active = true) {
   </div>`;
 }
 
+function settingsProfileForm(p) {
+  return `<div class="settings-section">
+    <div class="settings-header">Your Profile</div>
+    <div class="card settings-profile-card">
+      <div class="settings-profile-intro">
+        <div>
+          <h3>Mira profile details</h3>
+          <p class="muted small">This is the source of truth Mira uses for drafting, tone, audience, and founder context.</p>
+        </div>
+        <span class="badge ${ui.state.onboarding_completed ? "published" : "draft"}">${ui.state.onboarding_completed ? "Saved" : "Needs setup"}</span>
+      </div>
+      <form class="form-grid" id="profile-form">
+        ${field("First name", "first_name", p.first_name)}
+        ${field("Role", "role", p.role)}
+        ${field("Company", "company_name", p.company_name)}
+        ${field("Industry", "industry", p.industry)}
+        ${field("Company description", "company_description", p.company_description, true)}
+        ${field("Audience (comma separated)", "audience", p.audience.join(", "), true)}
+        ${field("Expertise (comma separated)", "expertise", p.expertise.join(", "), true)}
+        <div class="field"><label>Posting frequency</label><select name="posting_frequency"><option value="1-2x_per_week" ${p.posting_frequency === "1-2x_per_week" ? "selected" : ""}>1–2× per week</option><option value="3-4x_per_week" ${p.posting_frequency === "3-4x_per_week" ? "selected" : ""}>3–4× per week</option><option value="5+_per_week" ${p.posting_frequency === "5+_per_week" ? "selected" : ""}>5+ per week</option></select></div>
+        ${field("Tone", "tone", p.tone)}
+        ${textAreaField("Writing style notes", "writing_style", p.writing_style || "", "Example: Reflective, direct, specific, no hype. I like numbered points and founder lessons.", true)}
+        ${textAreaField("Writing samples", "writing_samples", (p.writing_samples || []).join("\n\n---\n\n"), "Paste 1-3 LinkedIn posts or writing examples. Separate samples with ---.", true)}
+        ${field("Preferred structure", "preferred_structure", p.preferred_structure || "Hook, context, lesson, reflective question", true)}
+        ${field("Phrases to avoid (comma separated)", "avoided_phrases", (p.avoided_phrases || []).join(", "), true)}
+        ${field("CTA style", "cta_style", p.cta_style || "Reflective question", true)}
+        <div class="field full"><button class="button">Save profile</button></div>
+      </form>
+    </div>
+  </div>`;
+}
+
 function renderSettings() {
   const p = ui.state.profile;
   const anthropic = ui.integrations?.anthropic;
@@ -1265,9 +1286,7 @@ function renderSettings() {
   const payloadcms = ui.integrations?.payloadcms;
   const database = ui.integrations?.database;
   const linkedinBadge = linkedin?.connected ? "Connected" : linkedin?.configured ? "OAuth configured" : "Fallback ready";
-  const linkedinClass = linkedin?.connected ? "published" : linkedin?.configured ? "scheduled" : "draft";
   const databaseIsPostgres = database?.storage === "postgres";
-  const companySummary = [p.company_name, p.industry, p.company_website].filter(Boolean).join(" · ") || "Not set";
   const linkedinDetail = linkedin?.connected
     ? "Connected for this staging session"
     : linkedin?.configured
@@ -1275,18 +1294,7 @@ function renderSettings() {
       : "Not connected · manual fallback ready";
   return `<section class="page settings-page" data-testid="settings-page"><div class="eyebrow">Settings</div><h1>Settings</h1><p class="lead">Your profile, LinkedIn connection, notification preferences, and staging status live here.</p>
     ${ui.notice ? `<div class="notice">${escapeHtml(ui.notice)}</div>` : ""}
-    ${settingsSection("Your Profile", [
-      settingsRow("👤", "purple", "Name", p.first_name || accountLabel()),
-      settingsRow("💼", "purple", "Role", p.role || "Not set"),
-      settingsRow("🏢", "purple", "Company & Industry", companySummary),
-      settingsRow("🧠", "purple", "Expertise", summarizeList(p.expertise)),
-      settingsRow("✍", "purple", "LinkedIn personality", savedStatus(p.writing_style, "About / voice notes saved")),
-      settingsRow("📄", "purple", "Writing samples", savedStatus(p.writing_samples, `${(p.writing_samples || []).length} samples saved`)),
-      settingsRow("🎯", "purple", "Target audience", summarizeList(p.audience)),
-      settingsRow("📝", "purple", "Content types", summarizeList(p.content_types)),
-      settingsRow("📅", "purple", "Posting frequency", (p.posting_frequency || "Not set").replaceAll("_", " ")),
-      settingsRow("🗣", "purple", "Tone", p.tone || "Not set"),
-    ])}
+    ${settingsProfileForm(p)}
     <div class="settings-section">
       <div class="settings-header">LinkedIn</div>
       <div class="linkedin-status-card">
@@ -1306,31 +1314,20 @@ function renderSettings() {
     ${settingsSection("Timezone", [
       settingsRow("🌏", "blue", "Timezone", "Asia/Singapore (GMT+8) · Auto-detected"),
     ])}
-    ${settingsSection("Account", [
-      settingsRow("🔒", "gray", "Change password", "Password reset is not enabled in staging"),
-      settingsRow("🗑", "red", "Reset workspace data", "Clears local/demo memories, drafts, and chat state", "Reset"),
-    ])}
-    <details class="settings-edit-card card">
-      <summary>Edit Mira profile details</summary>
-      <p class="muted small">These fields mirror onboarding and are loaded whenever Mira drafts.</p>
-      <form class="form-grid" id="profile-form">
-        ${field("First name", "first_name", p.first_name)}
-        ${field("Role", "role", p.role)}
-        ${field("Company", "company_name", p.company_name)}
-        ${field("Industry", "industry", p.industry)}
-        ${field("Company description", "company_description", p.company_description, true)}
-        ${field("Audience (comma separated)", "audience", p.audience.join(", "), true)}
-        ${field("Expertise (comma separated)", "expertise", p.expertise.join(", "), true)}
-        <div class="field"><label>Posting frequency</label><select name="posting_frequency"><option value="1-2x_per_week" ${p.posting_frequency === "1-2x_per_week" ? "selected" : ""}>1–2× per week</option><option value="3-4x_per_week" ${p.posting_frequency === "3-4x_per_week" ? "selected" : ""}>3–4× per week</option><option value="5+_per_week" ${p.posting_frequency === "5+_per_week" ? "selected" : ""}>5+ per week</option></select></div>
-        ${field("Tone", "tone", p.tone)}
-        ${textAreaField("Writing style notes", "writing_style", p.writing_style || "", "Example: Reflective, direct, specific, no hype. I like numbered points and founder lessons.", true)}
-        ${textAreaField("Writing samples", "writing_samples", (p.writing_samples || []).join("\n\n---\n\n"), "Paste 1-3 LinkedIn posts or writing examples. Separate samples with ---.", true)}
-        ${field("Preferred structure", "preferred_structure", p.preferred_structure || "Hook, context, lesson, reflective question", true)}
-        ${field("Phrases to avoid (comma separated)", "avoided_phrases", (p.avoided_phrases || []).join(", "), true)}
-        ${field("CTA style", "cta_style", p.cta_style || "Reflective question", true)}
-        <div class="field full"><button class="button">Save profile</button> <button type="button" class="button ghost" id="reset-demo">Reset workspace data</button></div>
-      </form>
-    </details>
+    <div class="settings-section">
+      <div class="settings-header">Account</div>
+      <div class="settings-group">
+        ${settingsRow("🔒", "gray", "Change password", "Password reset is not enabled in staging")}
+        <div class="settings-row settings-action-row">
+          <div class="settings-row-icon red">🗑</div>
+          <div class="settings-row-body">
+            <div class="settings-row-label">Reset workspace data</div>
+            <div class="settings-row-value">Clears local/demo memories, drafts, and chat state</div>
+          </div>
+          <button type="button" class="button danger settings-inline-button" id="reset-demo">Reset</button>
+        </div>
+      </div>
+    </div>
     <div class="settings-system">
       <div class="eyebrow">System / staging</div>
       ${productReadinessPanel()}

@@ -178,7 +178,8 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     settings_page.get_by_text("LinkedIn", exact=True).first.wait_for()
     settings_page.get_by_text("Notifications", exact=True).wait_for()
     settings_page.get_by_text("Account", exact=True).wait_for()
-    settings_page.get_by_text("Edit Mira profile details").wait_for()
+    settings_page.get_by_text("Mira profile details").wait_for()
+    settings_page.locator('input[name="first_name"]').wait_for()
 
     page.locator('[data-action="quick-actions"]').click()
     page.locator('[data-action="qa-status"]').click()
@@ -188,5 +189,53 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     qa_page.get_by_text("Mockup alignment").wait_for()
     qa_page.get_by_text("Known limitations").wait_for()
     qa_page.get_by_text("How to send feedback").wait_for()
+
+    context.close()
+
+
+def test_mobile_settings_uses_full_viewport_and_real_profile_editor(live_server, browser):
+    context = browser.new_context(
+        viewport={"width": 430, "height": 932},
+        is_mobile=True,
+        has_touch=True,
+        device_scale_factor=3,
+    )
+    page = context.new_page()
+
+    email = f"mobile-{uuid.uuid4().hex}@example.com"
+    page.goto(live_server)
+
+    page.locator('[data-testid="auth-toggle"]').click()
+    page.locator('input[name="user_name"]').fill("Jae Mobile")
+    page.locator('input[name="email"]').fill(email)
+    page.locator('input[name="password"]').fill("strong-password-123")
+    page.locator('[data-testid="auth-submit"]').click()
+
+    fill_onboarding(page)
+
+    page.locator('.mobile-nav [data-tab="settings"]').click()
+    page.locator('[data-testid="settings-page"]').wait_for()
+
+    metrics = page.evaluate(
+        """() => {
+            const rect = (selector) => {
+                const element = document.querySelector(selector);
+                const box = element.getBoundingClientRect();
+                return { left: Math.round(box.left), width: Math.round(box.width) };
+            };
+            return {
+                innerWidth: window.innerWidth,
+                shell: rect(".shell"),
+                mobileNav: rect(".mobile-nav"),
+                settingsActions: [...document.querySelectorAll(".settings-row-action")].map((el) => el.textContent.trim()),
+                hasProfileForm: Boolean(document.querySelector('#profile-form input[name="first_name"]')),
+            };
+        }"""
+    )
+
+    assert metrics["shell"] == {"left": 0, "width": metrics["innerWidth"]}
+    assert metrics["mobileNav"] == {"left": 0, "width": metrics["innerWidth"]}
+    assert "Edit" not in metrics["settingsActions"]
+    assert metrics["hasProfileForm"]
 
     context.close()
