@@ -204,6 +204,45 @@ def test_generic_chat_draft_does_not_force_company_anchor(monkeypatch):
     client.post("/api/reset")
 
 
+def test_followup_draft_keeps_requested_topic_over_loose_memory(monkeypatch):
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
+    client.post("/api/reset")
+    try:
+        client.post(
+            "/api/content-bank",
+            json={
+                "category": "personal",
+                "raw_text": "I'm pianist.",
+            },
+        )
+
+        response = client.post(
+            "/api/chat/message",
+            json={"message": "draft about AI and music"},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["actions"] == ["context_requested"]
+
+        response = client.post(
+            "/api/chat/message",
+            json={"message": "just draft it"},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert "draft_created" in payload["actions"]
+        post = payload["post"]
+        content = post["content"].lower()
+        assert post["title"] == "AI and music"
+        assert "ai and music" in content
+        assert "pianist" not in content
+        assert "piano" not in content
+    finally:
+        client.post("/api/reset")
+
+
 def test_mira_asks_for_context_before_generic_draft_request(monkeypatch):
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
     client.post("/api/reset")

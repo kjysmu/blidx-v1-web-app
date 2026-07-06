@@ -348,7 +348,10 @@ class DemoStore:
                 topic = (
                     selected_angle_topic
                     if selected_angle_topic
-                    else self._topic_from_context(state, content if followup_draft else None)
+                    else self._topic_from_context(
+                        state,
+                        content if followup_draft or self._wants_latest_context(content) else None,
+                    )
                     if followup_draft or self._wants_latest_context(content)
                     else self._extract_topic(content)
                 )
@@ -1193,7 +1196,7 @@ class DemoStore:
             first_angle = last_angles[0]
             if first_angle.get("prompt"):
                 return first_angle["prompt"]
-        if state.get("content_bank"):
+        if current_content and DemoStore._wants_latest_context(current_content) and state.get("content_bank"):
             latest = state["content_bank"][0]["raw_text"]
             if "ai" in latest.lower() and "mental" in json.dumps(state.get("profile", {})).lower():
                 return "human connection versus AI in mental health"
@@ -1201,6 +1204,11 @@ class DemoStore:
         recent_topic = DemoStore._topic_from_recent_draft_request(state, current_content)
         if recent_topic:
             return recent_topic
+        if state.get("content_bank"):
+            latest = state["content_bank"][0]["raw_text"]
+            if "ai" in latest.lower() and "mental" in json.dumps(state.get("profile", {})).lower():
+                return "human connection versus AI in mental health"
+            return latest[:140]
         messages = [
             message.get("content", "")
             for message in state.get("messages", [])
@@ -1717,11 +1725,17 @@ class DemoStore:
     def _topic_terms(text: str) -> set[str]:
         stopwords = {
             "about",
+            "and",
             "draft",
             "post",
             "linkedin",
             "this",
             "that",
+            "the",
+            "for",
+            "but",
+            "not",
+            "you",
             "with",
             "from",
             "into",
@@ -1739,7 +1753,10 @@ class DemoStore:
         return {
             word.strip(".,:;!?()[]{}\"'“”‘’").lower()
             for word in text.split()
-            if len(word.strip(".,:;!?()[]{}\"'“”‘’")) > 2
+            if (
+                len(word.strip(".,:;!?()[]{}\"'“”‘’")) > 2
+                or word.strip(".,:;!?()[]{}\"'“”‘’").lower() in {"ai"}
+            )
             and word.strip(".,:;!?()[]{}\"'“”‘’").lower() not in stopwords
         }
 
@@ -1870,7 +1887,10 @@ class DemoStore:
             "Use short paragraphs. If listing multiple points, use the user's preferred numbered style like 1/, 2/, 3/. "
             "End with the user's preferred CTA style. "
             "Do not repeat command phrases such as 'draft about' in the draft. "
-            "Use Content Bank context only when it is clearly relevant to the requested topic. "
+            "The TASK topic is the main instruction. Preserve it even when Content Bank context suggests a different story. "
+            "Use Content Bank context only when it directly supports the requested topic; do not let a loosely related memory replace the topic. "
+            "For example, if the task is about AI and music and the Content Bank only says the user is a pianist, write about AI and music; "
+            "you may use the pianist detail as a small personal lens, but the post must still clearly discuss AI and music. "
             "Do not mention Blidx or the user's company unless the user explicitly asks, the topic is about that company, "
             "or the relevant Content Bank context is about that company. "
             "Do not invent concrete facts, names, statistics, events, or credentials that are not in the context."
@@ -1922,6 +1942,10 @@ class DemoStore:
         return "\n\n".join(
             [
                 "TASK\n" f"Draft a LinkedIn post about: {topic.strip()}",
+                "TOPIC PRIORITY\n"
+                "The requested topic above outranks Content Bank context. "
+                "Use memories as optional supporting texture only when they clearly help the topic. "
+                "Do not turn the draft into a different subject just because a memory is more personal.",
                 "DRAFT STRATEGY\n"
                 f"Use this framework: {DemoStore._framework_label(framework)}.\n"
                 "If the framework is field note, lead with a concrete scene or observation.\n"
