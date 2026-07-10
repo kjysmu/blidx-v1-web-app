@@ -669,6 +669,18 @@ class DemoStore:
     def save_post(self, post_id: str) -> dict | None:
         return self._set_status(post_id, "saved")
 
+    def restore_post(self, post_id: str) -> dict | None:
+        """Undo a skip: bring a deleted draft back to pending review."""
+        with self.lock:
+            state = self._read()
+            post = self._find_post(state, post_id)
+            if post is None or post.get("status") != "deleted":
+                return None
+            post["status"] = "pending"
+            post["updated_at"] = utc_now().isoformat()
+            self._write(state)
+            return deepcopy(post)
+
     def delete_post(self, post_id: str) -> dict | None:
         return self._set_status(post_id, "deleted")
 

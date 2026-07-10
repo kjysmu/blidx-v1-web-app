@@ -15,6 +15,8 @@ const ui = {
   notice: "",
   modal: null,
   toast: "",
+  toastAction: null,
+  toastTimer: null,
   loading: false,
   scrollChatAfterRender: false,
   quickActionsOpen: false,
@@ -184,7 +186,7 @@ function layout(content) {
     <nav class="mobile-nav">${mobileNav}</nav>
     ${draftReviewModal()}
     ${ui.modal || ""}
-    ${ui.toast ? `<div class="toast">${escapeHtml(ui.toast)}</div>` : ""}
+    ${ui.toast ? `<div class="toast">${escapeHtml(ui.toast)}${ui.toastAction ? `<button class="toast-action" id="toast-action">${escapeHtml(ui.toastAction.label)}</button>` : ""}</div>` : ""}
   `;
   bindGlobal();
 }
@@ -292,6 +294,50 @@ function bindGlobal() {
   document.querySelectorAll('[data-action="sample-draft"]').forEach((button) => {
     button.onclick = createSampleDraft;
   });
+  const toastAction = document.querySelector("#toast-action");
+  if (toastAction) {
+    toastAction.onclick = () => {
+      const run = ui.toastAction?.onAction;
+      clearTimeout(ui.toastTimer);
+      ui.toast = "";
+      ui.toastAction = null;
+      render();
+      run?.();
+    };
+  }
+  bindModalDismissal();
+}
+
+function bindModalDismissal() {
+  const backdrops = document.querySelectorAll(".modal-backdrop");
+  if (!backdrops.length) {
+    document.removeEventListener("keydown", closeModalOnEscape);
+    return;
+  }
+  document.addEventListener("keydown", closeModalOnEscape);
+  backdrops.forEach((backdrop) => {
+    backdrop.addEventListener("mousedown", (event) => {
+      if (event.target === backdrop) closeAnyModal();
+    });
+  });
+  const top = backdrops[backdrops.length - 1];
+  if (!top.contains(document.activeElement)) {
+    const target = top.querySelector("textarea, input, select")
+      || top.querySelector("button:not([data-modal-close])")
+      || top.querySelector("button");
+    target?.focus();
+  }
+}
+
+function closeModalOnEscape(event) {
+  if (event.key === "Escape") closeAnyModal();
+}
+
+function closeAnyModal() {
+  if (ui.modal) ui.modal = null;
+  else if (ui.reviewDraftId) ui.reviewDraftId = null;
+  else return;
+  render();
 }
 
 function closeQuickActionsOnOutsideClick(event) {
@@ -1110,6 +1156,7 @@ function renderAnalytics() {
   }, {});
   const categories = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]);
   return `<section class="page"><div class="eyebrow">Progress</div><h1>Analytics</h1><p class="lead">A lightweight MVP view of whether the content workflow is moving: memories captured, drafts created, and posts moved toward LinkedIn.</p>
+    ${progressRing()}
     <div class="stats-grid">
       ${statCard("Content Bank", bank.length, `${highPotential} high-potential entries`)}
       ${statCard("Drafts", pending, "Ready for review or revision")}
@@ -1121,6 +1168,39 @@ function renderAnalytics() {
       <div class="card"><div class="card-head"><h3>Memory mix</h3><span class="badge draft">${categories.length || 0} categories</span></div>${categories.length ? categories.map(([name, count]) => `<div class="bar-row"><span>${escapeHtml(name)}</span><strong>${count}</strong></div>`).join("") : '<p class="muted">No Content Bank entries yet.</p>'}</div>
     </div>
   </section>`;
+}
+
+function progressRing() {
+  const profile = ui.state.profile || {};
+  const goalMap = { "1-2x_per_week": 1, "3-4x_per_week": 3, "5+_per_week": 5 };
+  const goal = goalMap[profile.posting_frequency] || 3;
+  const monday = new Date();
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  monday.setHours(0, 0, 0, 0);
+  const publishedThisWeek = ui.state.posts.filter((post) =>
+    post.status === "published" && post.published_at && new Date(post.published_at) >= monday
+  ).length;
+  const progress = Math.min(publishedThisWeek / goal, 1);
+  const radius = 52;
+  const circumference = 2 * Math.PI * radius;
+  const complete = progress >= 1;
+  const remaining = goal - publishedThisWeek;
+  return `<div class="card ring-card ${complete ? "complete" : ""}">
+    <div class="ring-wrap">
+      <svg viewBox="0 0 128 128" class="ring" role="img" aria-label="Weekly goal progress: ${publishedThisWeek} of ${goal} posts published">
+        <circle cx="64" cy="64" r="${radius}" class="ring-track" />
+        <circle cx="64" cy="64" r="${radius}" class="ring-fill" stroke-dasharray="${circumference.toFixed(1)}" stroke-dashoffset="${(circumference * (1 - progress)).toFixed(1)}" transform="rotate(-90 64 64)" />
+      </svg>
+      <div class="ring-center"><strong>${publishedThisWeek}<span>/${goal}</span></strong></div>
+    </div>
+    <div class="ring-copy">
+      <h3>${complete ? "Weekly goal complete" : "This week's goal"}</h3>
+      <p class="muted">${complete
+        ? "You published everything you aimed for this week. Anything extra is a head start on next week."
+        : `${remaining} more ${remaining === 1 ? "post" : "posts"} to hit your ${escapeHtml((profile.posting_frequency || "3-4x_per_week").replaceAll("_", " "))} goal. Publishing from the Library moves this ring.`}</p>
+      ${complete ? '<span class="ring-badge">🎉 Goal hit</span>' : `<button class="button secondary" data-tab="${ui.state.posts.some((post) => post.status === "pending") ? "library" : "chat"}">${ui.state.posts.some((post) => post.status === "pending") ? "Review pending drafts" : "Draft with Mira"}</button>`}
+    </div>
+  </div>`;
 }
 
 function statCard(label, value, helper) {
@@ -1730,14 +1810,29 @@ async function saveMemory(event) {
 }
 
 async function deleteMemory(id) {
-  if (!window.confirm("Delete this Content Bank entry?")) return;
+  const entry = ui.state.content_bank.find((item) => item.id === id);
   try {
     await api(`/api/content-bank/${id}`, { method: "DELETE" });
-    ui.notice = "Content Bank entry deleted.";
     await refresh();
-    ui.notice = "Content Bank entry deleted."; render();
+    showToast(
+      "Memory deleted",
+      entry ? { label: "Undo", onAction: () => restoreMemory(entry) } : null,
+    );
   } catch (error) {
     showToast(error.message);
+  }
+}
+
+async function restoreMemory(entry) {
+  try {
+    await api("/api/content-bank", {
+      method: "POST",
+      body: JSON.stringify({ raw_text: entry.raw_text, category: entry.category }),
+    });
+    await refresh();
+    showToast("Memory restored");
+  } catch (error) {
+    showToast(error.message || "Could not restore the memory");
   }
 }
 
@@ -1778,7 +1873,20 @@ function handleDraftAction(action, id, variantId = null) {
   } else {
     api(`/api/drafts/${id}/${action}`, { method: "POST" })
       .then(() => { ui.reviewDraftId = null; return refresh(); })
-      .then(() => showToast(action === "save" ? "Saved to Library" : "Draft skipped"));
+      .then(() => {
+        if (action === "save") showToast("Saved to Library");
+        else showToast("Draft skipped", { label: "Undo", onAction: () => restoreDraft(id) });
+      });
+  }
+}
+
+async function restoreDraft(id) {
+  try {
+    await api(`/api/drafts/${id}/restore`, { method: "POST" });
+    await refresh();
+    showToast("Draft restored to review");
+  } catch (error) {
+    showToast(error.message || "Could not restore the draft");
   }
 }
 
@@ -1986,9 +2094,13 @@ async function seedDemo() {
   showToast("Tester scenario loaded");
 }
 
-function showToast(message) {
-  ui.toast = message; render();
-  setTimeout(() => { ui.toast = ""; render(); }, 2200);
+function showToast(message, action = null) {
+  ui.toast = message;
+  ui.toastAction = action;
+  render();
+  clearTimeout(ui.toastTimer);
+  // Leave undo-style toasts up long enough to actually reach.
+  ui.toastTimer = setTimeout(() => { ui.toast = ""; ui.toastAction = null; render(); }, action ? 6000 : 2200);
 }
 
 function logout() {

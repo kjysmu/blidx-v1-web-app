@@ -194,6 +194,14 @@ def delete_draft(draft_id: str) -> dict[str, Any]:
     return post
 
 
+@router.post("/drafts/{draft_id}/restore")
+def restore_draft(draft_id: str) -> dict[str, Any]:
+    post = demo_store.restore_post(draft_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Draft not found or not skipped")
+    return post
+
+
 @router.post("/reset")
 def reset_demo() -> dict[str, Any]:
     return demo_store.reset()
