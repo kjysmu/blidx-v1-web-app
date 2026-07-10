@@ -320,6 +320,9 @@ class DemoStore:
             intent = self._detect_chat_intent(content)
             self._set_workflow(state, last_intent=intent)
             self._append_message(state, "user", content)
+            signal = self._signal_from_user_message(content)
+            if signal:
+                self._record_signal(state, signal)
 
             if self._is_off_topic(content):
                 reply = (
@@ -504,6 +507,10 @@ class DemoStore:
                 post["schedule_type"] = schedule["schedule_type"]
                 post["schedule_label"] = schedule["schedule_label"]
             post["updated_at"] = now.isoformat()
+            self._record_signal(
+                state,
+                f"Draft {post['status']}: {(post.get('title') or '')[:80]}",
+            )
             if post["status"] == "published":
                 self._celebrate_milestones(state, post)
             self._write(state)
@@ -705,6 +712,8 @@ class DemoStore:
                 return None
             post["status"] = status
             post["updated_at"] = utc_now().isoformat()
+            label = "skipped" if status == "deleted" else status
+            self._record_signal(state, f"Draft {label}: {(post.get('title') or '')[:80]}")
             self._write(state)
             return deepcopy(post)
 
@@ -799,6 +808,7 @@ class DemoStore:
     def _normalize_state(state: dict) -> dict:
         state.setdefault("content_bank", [])
         state.setdefault("posts", [])
+        state.setdefault("conversation_signals", [])
         profile = state.setdefault("profile", {})
         profile.setdefault("writing_style", "")
         profile.setdefault("writing_samples", [])
@@ -1167,6 +1177,7 @@ class DemoStore:
         topic = content.strip()
         lowered = topic.lower()
         prefixes = (
+            "draft a fresh take on",
             "draft a post about",
             "draft about",
             "draft a linkedin post about",
@@ -1184,7 +1195,7 @@ class DemoStore:
         )
         for prefix in prefixes:
             if lowered.startswith(prefix):
-                topic = topic[len(prefix) :].strip(" :.-")
+                topic = topic[len(prefix) :].strip(" :.-\"'“”")
                 break
         return topic or content.strip()
 
@@ -2018,6 +2029,40 @@ class DemoStore:
         )
 
     @staticmethod
+    def _record_signal(state: dict, signal: str) -> None:
+        """Append one durable fact to the persistent signal log (spec §3.2 item 5).
+
+        Rule-based, zero LLM cost. Survives the 40-message chat cap; trimmed
+        oldest-first to stay under ~2000 characters.
+        """
+        entry = f"[{utc_now().date().isoformat()}] {signal.strip()}"
+        log = state.setdefault("conversation_signals", [])
+        if entry in log[-5:]:
+            return
+        log.append(entry)
+        while len(log) > 1 and sum(len(item) + 1 for item in log) > 2000:
+            log.pop(0)
+
+    @staticmethod
+    def _signal_from_user_message(content: str) -> str | None:
+        """Classify one user message into a durable signal, if it contains one."""
+        edit_prefs = (
+            "shorter", "longer", "bolder", "more personal", "less personal",
+            "different angle", "too formal", "less formal", "too long",
+            "more data", "not enough data", "too salesy",
+        )
+        mention_keywords = ("met ", "meeting with", "spoke to", "call with", "conference", "event")
+        topic_keywords = ("draft about", "post about", "write about", "content on")
+        lower = content.lower()
+        if any(keyword in lower for keyword in edit_prefs):
+            return f"Edit preference: {content[:120]}"
+        if any(keyword in lower for keyword in topic_keywords):
+            return f"Requested topic: {content[:120]}"
+        if any(keyword in lower for keyword in mention_keywords):
+            return f"Mentioned: {content[:140]}"
+        return None
+
+    @staticmethod
     def _celebrate_milestones(state: dict, post: dict) -> None:
         """Milestone messages in chat right after a post is published (spec §9.4)."""
         published_count = sum(1 for item in state.get("posts", []) if item.get("status") == "published")
@@ -2068,7 +2113,7 @@ class DemoStore:
         pipeline = DemoStore._pipeline_state(state)
         gap = pipeline["weekly_goal"] - pipeline["published_this_week"]
         if gap <= 0:
-            return None
+            return DemoStore._repurpose_brief(state, now)
         if pending:
             # Only nudge about a pending draft once it has sat for a while —
             # right after Mira drafts it, the draft card itself is the call to action.
@@ -2106,7 +2151,37 @@ class DemoStore:
                 "action": "draft_latest_memory",
                 "memory_id": fresh_high[0]["id"],
             }
-        return None
+        return DemoStore._repurpose_brief(state, now)
+
+    @staticmethod
+    def _repurpose_brief(state: dict, now: datetime) -> dict | None:
+        """Resurface a post published 30+ days ago for a fresh take (spec §7.3)."""
+        candidates = []
+        for post in state.get("posts", []):
+            if post.get("status") != "published" or not post.get("published_at"):
+                continue
+            try:
+                published = datetime.fromisoformat(post["published_at"])
+            except ValueError:
+                continue
+            if published.tzinfo is None:
+                published = published.replace(tzinfo=timezone.utc)
+            if now - published >= timedelta(days=30):
+                candidates.append((published, post))
+        if not candidates:
+            return None
+        published, post = max(candidates, key=lambda item: item[0])
+        title = post.get("title") or "An earlier post"
+        return {
+            "kind": "repurpose",
+            "message": (
+                f"“{title}” went out {(now - published).days} days ago. Topics that worked once "
+                "usually have a second angle in them — want me to draft a fresh take?"
+            ),
+            "action": "draft_repurpose",
+            "post_id": post["id"],
+            "topic": title,
+        }
 
     @staticmethod
     def _pipeline_state(state: dict) -> dict:
@@ -2168,31 +2243,25 @@ class DemoStore:
 
     @staticmethod
     def _conversation_signals(state: dict) -> list[str]:
-        """Rule-based long-term memory: durable signals, no LLM cost (spec §3.2 item 5)."""
-        edit_prefs = (
-            "shorter", "longer", "bolder", "more personal", "less personal",
-            "different angle", "too formal", "less formal", "too long",
-            "more data", "not enough data", "too salesy",
-        )
-        mention_keywords = ("met ", "meeting with", "spoke to", "call with", "conference", "event")
-        topic_keywords = ("draft about", "post about", "write about", "content on")
+        """Rule-based long-term memory: durable signals, no LLM cost (spec §3.2 item 5).
+
+        Reads the persistent log written by _record_signal, which survives the
+        40-message chat cap. States created before the log existed fall back to
+        deriving signals from whatever messages are still in the window.
+        """
+        log = state.get("conversation_signals") or []
+        if log:
+            return log[-12:]
         signals: list[str] = []
         for message in state.get("messages", []):
             if message.get("role") != "user":
                 continue
-            text = (message.get("content") or "").strip()
-            lower = text.lower()
-            if any(keyword in lower for keyword in edit_prefs):
-                signals.append(f"[Edit preference] {text[:120]}")
-            elif any(keyword in lower for keyword in topic_keywords):
-                signals.append(f"[Requested topic] {text[:120]}")
-            elif any(keyword in lower for keyword in mention_keywords):
-                signals.append(f"[Mentioned] {text[:140]}")
+            signal = DemoStore._signal_from_user_message((message.get("content") or "").strip())
+            if signal:
+                signals.append(signal)
         for post in state.get("posts", [])[:6]:
-            if post.get("status") != "deleted":
-                signals.append(f"[Draft {post.get('status')}] {(post.get('title') or '')[:80]}")
-            else:
-                signals.append(f"[Draft skipped] {(post.get('title') or '')[:80]}")
+            status = "skipped" if post.get("status") == "deleted" else post.get("status")
+            signals.append(f"Draft {status}: {(post.get('title') or '')[:80]}")
         return signals[-12:]
 
     @staticmethod

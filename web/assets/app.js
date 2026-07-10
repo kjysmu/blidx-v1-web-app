@@ -186,7 +186,7 @@ function layout(content) {
     <nav class="mobile-nav">${mobileNav}</nav>
     ${draftReviewModal()}
     ${ui.modal || ""}
-    ${ui.toast ? `<div class="toast">${escapeHtml(ui.toast)}${ui.toastAction ? `<button class="toast-action" id="toast-action">${escapeHtml(ui.toastAction.label)}</button>` : ""}</div>` : ""}
+    ${ui.toast ? `<div class="toast" role="status" aria-live="polite">${escapeHtml(ui.toast)}${ui.toastAction ? `<button class="toast-action" id="toast-action">${escapeHtml(ui.toastAction.label)}</button>` : ""}</div>` : ""}
   `;
   bindGlobal();
 }
@@ -665,7 +665,9 @@ function proactiveBubble() {
     ? `<button class="button" data-testid="proactive-action" data-draft-review="${brief.post_id}">Open draft workspace</button>`
     : brief.action === "draft_latest_memory"
       ? '<button class="button" data-testid="proactive-action" data-prompt="Draft from my latest memory">Draft it</button>'
-      : "";
+      : brief.action === "draft_repurpose"
+        ? `<button class="button" data-testid="proactive-action" data-prompt="${escapeHtml(`Draft a fresh take on "${brief.topic}"`)}">Draft a fresh take</button>`
+        : "";
   return `<div class="bubble mira proactive" data-testid="proactive-brief"><strong>Mira</strong><br>${escapeHtml(brief.message)}
     <div class="proactive-actions">${action}<button class="button ghost" data-proactive-dismiss>Not now</button></div>
   </div>`;
