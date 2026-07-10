@@ -154,6 +154,9 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     page.locator('[data-testid="linkedin-not-yet"]').click()
     page.get_by_text("Draft kept in Blidx for later.").wait_for()
 
+    # Save now lives in the draft workspace, not on the chat card.
+    page.locator('[data-testid="review-draft"]').first.click()
+    page.locator('[data-testid="draft-review-modal"]').wait_for()
     page.locator('[data-testid="save-draft"]').first.click()
     page.get_by_text("Saved to Library").wait_for()
 

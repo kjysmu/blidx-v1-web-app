@@ -243,10 +243,12 @@ function accountLabel() {
 function bindGlobal() {
   document.querySelectorAll("[data-tab]").forEach((button) => {
     button.onclick = () => {
+      const changed = ui.tab !== button.dataset.tab;
       ui.tab = button.dataset.tab;
       ui.modal = null;
       ui.quickActionsOpen = false;
       render();
+      if (changed) window.scrollTo(0, 0);
     };
   });
   document.querySelectorAll('[data-action="new-draft"]').forEach((button) => {
@@ -271,6 +273,7 @@ function bindGlobal() {
       ui.quickActionsOpen = false;
       ui.tab = "bank";
       render();
+      window.scrollTo(0, 0);
       setTimeout(() => document.querySelector("#bank-text")?.focus(), 0);
     };
   });
@@ -279,6 +282,7 @@ function bindGlobal() {
       ui.quickActionsOpen = false;
       ui.tab = "analytics";
       render();
+      window.scrollTo(0, 0);
     };
   });
   document.querySelectorAll('[data-action="qa-status"]').forEach((button) => {
@@ -286,6 +290,7 @@ function bindGlobal() {
       ui.quickActionsOpen = false;
       ui.tab = "qa";
       render();
+      window.scrollTo(0, 0);
     };
   });
   document.querySelectorAll('[data-action="logout"]').forEach((button) => {
@@ -751,13 +756,9 @@ function draftCard(post, compact = true) {
     <div class="draft-meta"><span>Draft v${post.version} · ${post.source.replace("_", " ")} · ${escapeHtml(provider)}</span><span>${post.char_count} / 3,000</span></div>
     <div class="draft-summary"><div><strong>Draft ready: ${escapeHtml(post.title || "Untitled draft")}</strong><p>${excerpt}${content.length > 220 ? "…" : ""}</p><button class="read-more" data-testid="open-draft-workspace" data-draft-review="${post.id}">Open draft workspace</button></div><span class="badge draft">pending review</span></div>
     <div class="draft-actions">
-      <button class="button" data-testid="review-draft" data-draft-review="${post.id}">Review draft</button>
+      <button class="button" data-testid="review-draft" data-draft-review="${post.id}">Review & edit</button>
       <button class="button" data-testid="approve-draft" data-draft-action="approve" data-id="${post.id}">Approve</button>
       <button class="button secondary" data-testid="linkedin-handoff" data-draft-action="linkedin" data-id="${post.id}">${publishLabel}</button>
-      <button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button>
-      <button class="button ghost" data-draft-action="copy" data-id="${post.id}">Copy</button>
-      <button class="button ghost" data-testid="save-draft" data-draft-action="save" data-id="${post.id}">Save draft</button>
-      <button class="button danger" data-draft-action="delete" data-id="${post.id}">Skip</button>
     </div>
   </article>`;
 }
@@ -788,7 +789,7 @@ function draftReviewModal() {
         <button class="button secondary" data-testid="linkedin-handoff" data-draft-action="linkedin" data-id="${post.id}">${publishLabel}</button>
         <button class="button secondary" data-draft-action="edit" data-id="${post.id}">Edit</button>
         <button class="button ghost" data-draft-action="copy" data-id="${post.id}">Copy</button>
-        <button class="button ghost" data-draft-action="save" data-id="${post.id}">Save draft</button>
+        <button class="button ghost" data-testid="save-draft" data-draft-action="save" data-id="${post.id}">Save draft</button>
         <button class="button danger" data-draft-action="delete" data-id="${post.id}">Skip</button>
       </div>
     </div>
