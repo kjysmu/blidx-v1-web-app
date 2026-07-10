@@ -504,6 +504,8 @@ class DemoStore:
                 post["schedule_type"] = schedule["schedule_type"]
                 post["schedule_label"] = schedule["schedule_label"]
             post["updated_at"] = now.isoformat()
+            if post["status"] == "published":
+                self._celebrate_milestones(state, post)
             self._write(state)
             return deepcopy(post)
 
@@ -618,6 +620,7 @@ class DemoStore:
                 kind="published",
                 post_id=post["id"],
             )
+            self._celebrate_milestones(state, post)
             self._write(state)
             return {"published": True, "mode": "oauth", "post": deepcopy(post)}
 
@@ -640,6 +643,7 @@ class DemoStore:
                 kind="published",
                 post_id=post["id"],
             )
+            self._celebrate_milestones(state, post)
             self._write(state)
             return deepcopy(post)
 
@@ -834,6 +838,7 @@ class DemoStore:
             "authenticated": bool(current_user_id.get()),
             "user_id": current_user_id.get(),
         }
+        public["proactive_brief"] = DemoStore._proactive_brief(state)
         return public
 
     @staticmethod
@@ -1109,6 +1114,22 @@ class DemoStore:
             "dating advice",
             "stock tip",
             "crypto",
+            "travel",
+            "book flight",
+            "book a flight",
+            "hotel",
+            "restaurant",
+            "vacation",
+            "plan trip",
+            "plan a trip",
+            "workout",
+            "fitness",
+            "diet",
+            "tell me a joke",
+            "play music",
+            "set alarm",
+            "set an alarm",
+            "translate",
         )
         content_terms = (
             "post",
@@ -1985,6 +2006,184 @@ class DemoStore:
         )
 
     @staticmethod
+    def _celebrate_milestones(state: dict, post: dict) -> None:
+        """Milestone messages in chat right after a post is published (spec §9.4)."""
+        published_count = sum(1 for item in state.get("posts", []) if item.get("status") == "published")
+        pipeline = DemoStore._pipeline_state(state)
+        notes = []
+        if published_count == 1:
+            notes.append(
+                "Milestone: your first post is published. That is the hardest one — the flywheel starts here."
+            )
+        elif published_count == 7:
+            notes.append(
+                "Milestone: seven posts published. This is past the experiment phase and into a real content habit."
+            )
+        if pipeline["weekly_goal"] > 0 and pipeline["published_this_week"] == pipeline["weekly_goal"]:
+            notes.append(
+                f"Weekly goal hit: {pipeline['published_this_week']}/{pipeline['weekly_goal']} posts this week. "
+                "Anything extra from here is bonus — or a head start on next week."
+            )
+        if notes:
+            DemoStore._append_message(state, "mira", "\n\n".join(notes), kind="milestone", post_id=post.get("id"))
+
+    @staticmethod
+    def _proactive_brief(state: dict) -> dict | None:
+        """One computed nudge for the frontend: stale draft first, then weekly-goal gap (spec §4.4, §8.3, §11).
+
+        Not persisted — recomputed on every state read so it disappears once acted on.
+        """
+        now = utc_now()
+        pending = [post for post in state.get("posts", []) if post.get("status") == "pending"]
+        for post in pending:
+            try:
+                created = datetime.fromisoformat(post.get("created_at") or "")
+            except ValueError:
+                continue
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            age_days = (now - created).days
+            if age_days >= 3:
+                return {
+                    "kind": "stale_draft",
+                    "message": (
+                        f"“{post.get('title')}” has been waiting in review for {age_days} days. "
+                        "Approve it, ask me to revise it, or skip it so the pipeline stays honest."
+                    ),
+                    "action": "review_draft",
+                    "post_id": post["id"],
+                }
+        pipeline = DemoStore._pipeline_state(state)
+        gap = pipeline["weekly_goal"] - pipeline["published_this_week"]
+        if gap <= 0:
+            return None
+        if pending:
+            # Only nudge about a pending draft once it has sat for a while —
+            # right after Mira drafts it, the draft card itself is the call to action.
+            post = pending[0]
+            try:
+                created = datetime.fromisoformat(post.get("created_at") or "")
+            except ValueError:
+                created = now
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if now - created < timedelta(hours=1):
+                return None
+            return {
+                "kind": "goal_gap_pending",
+                "message": (
+                    f"You're at {pipeline['published_this_week']}/{pipeline['weekly_goal']} posts this week, "
+                    f"and “{post.get('title')}” is already drafted — reviewing it now closes the gap."
+                ),
+                "action": "review_draft",
+                "post_id": post["id"],
+            }
+        fresh_high = [
+            entry
+            for entry in state.get("content_bank", [])
+            if entry.get("freshness") == "fresh" and entry.get("content_potential") == "high"
+        ]
+        if fresh_high:
+            snippet = (fresh_high[0].get("raw_text") or "")[:90]
+            return {
+                "kind": "goal_gap_memory",
+                "message": (
+                    f"You're at {pipeline['published_this_week']}/{pipeline['weekly_goal']} posts this week. "
+                    f"Your fresh memory “{snippet}…” is high-potential — want me to draft from it?"
+                ),
+                "action": "draft_latest_memory",
+                "memory_id": fresh_high[0]["id"],
+            }
+        return None
+
+    @staticmethod
+    def _pipeline_state(state: dict) -> dict:
+        """Live pipeline snapshot Mira gets with every chat call (spec §3.2 item 3)."""
+        posts = [post for post in state.get("posts", []) if post.get("status") != "deleted"]
+        by_status: dict[str, int] = {}
+        for post in posts:
+            by_status[post.get("status", "unknown")] = by_status.get(post.get("status", "unknown"), 0) + 1
+        goal_map = {"1-2x_per_week": 1, "3-4x_per_week": 3, "5+_per_week": 5}
+        profile = state.get("profile", {})
+        goal = goal_map.get(profile.get("posting_frequency"), 3)
+        now = utc_now()
+        monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        published_dates = []
+        for post in posts:
+            if post.get("status") == "published" and post.get("published_at"):
+                try:
+                    parsed = datetime.fromisoformat(post["published_at"])
+                except ValueError:
+                    continue
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                published_dates.append(parsed)
+        published_this_week = sum(1 for date in published_dates if date >= monday)
+        last_published = max(published_dates).isoformat() if published_dates else None
+        return {
+            "posts_by_status": by_status,
+            "weekly_goal": goal,
+            "published_this_week": published_this_week,
+            "last_published_at": last_published,
+            "content_bank_entries": len(state.get("content_bank", [])),
+            "fresh_entries": sum(1 for entry in state.get("content_bank", []) if entry.get("freshness") == "fresh"),
+        }
+
+    @staticmethod
+    def _relevant_memories(state: dict, content: str, limit: int = 4) -> list[dict]:
+        """Top Content Bank entries by keyword match, then freshness (spec §3.2 item 4)."""
+        terms = DemoStore._topic_terms(content)
+        freshness_rank = {"fresh": 0, "used": 1, "archived": 2}
+        scored = []
+        for index, entry in enumerate(state.get("content_bank", [])):
+            memory_terms = DemoStore._topic_terms(
+                " ".join(
+                    [
+                        entry.get("raw_text", ""),
+                        entry.get("category", ""),
+                        " ".join(entry.get("tags", [])),
+                    ]
+                )
+            )
+            score = len(terms & memory_terms)
+            scored.append((-score, freshness_rank.get(entry.get("freshness"), 1), index, entry))
+        scored.sort(key=lambda item: item[:3])
+        matched = [entry for neg_score, _, _, entry in scored if neg_score < 0][:limit]
+        if matched:
+            return matched
+        # No keyword overlap: fall back to the two most recent entries as ambient context.
+        return state.get("content_bank", [])[:2]
+
+    @staticmethod
+    def _conversation_signals(state: dict) -> list[str]:
+        """Rule-based long-term memory: durable signals, no LLM cost (spec §3.2 item 5)."""
+        edit_prefs = (
+            "shorter", "longer", "bolder", "more personal", "less personal",
+            "different angle", "too formal", "less formal", "too long",
+            "more data", "not enough data", "too salesy",
+        )
+        mention_keywords = ("met ", "meeting with", "spoke to", "call with", "conference", "event")
+        topic_keywords = ("draft about", "post about", "write about", "content on")
+        signals: list[str] = []
+        for message in state.get("messages", []):
+            if message.get("role") != "user":
+                continue
+            text = (message.get("content") or "").strip()
+            lower = text.lower()
+            if any(keyword in lower for keyword in edit_prefs):
+                signals.append(f"[Edit preference] {text[:120]}")
+            elif any(keyword in lower for keyword in topic_keywords):
+                signals.append(f"[Requested topic] {text[:120]}")
+            elif any(keyword in lower for keyword in mention_keywords):
+                signals.append(f"[Mentioned] {text[:140]}")
+        for post in state.get("posts", [])[:6]:
+            if post.get("status") != "deleted":
+                signals.append(f"[Draft {post.get('status')}] {(post.get('title') or '')[:80]}")
+            else:
+                signals.append(f"[Draft skipped] {(post.get('title') or '')[:80]}")
+        return signals[-12:]
+
+    @staticmethod
     def _generate_chat_reply(state: dict, content: str) -> str | None:
         provider = ClaudeProvider()
         if not provider.configured:
@@ -2001,16 +2200,27 @@ class DemoStore:
             "and ask for the missing concrete detail before drafting. "
             "When suggesting angles, format them exactly as '1/ Angle title: one-sentence explanation.' "
             "so the product can offer draft actions. If the user's topic is broad and lacks a real moment, "
-            "ask for one concrete detail before drafting. Respect the user's voice controls."
+            "ask for one concrete detail before drafting. Respect the user's voice controls. "
+            "Use PIPELINE STATE to be proactive: mention pending drafts waiting on review or a weekly goal "
+            "gap when it is genuinely useful, not as a nag. Only cite numbers that appear in PIPELINE STATE; "
+            "never invent metrics, impressions, comment text, or events that are not in the provided context. "
+            "If the user is rude or frustrated, stay professional: acknowledge what missed the mark, ask what "
+            "specifically felt off, and redirect to actionable content work. Never be defensive."
         )
-        messages = state.get("messages", [])[-8:]
+        window = [
+            {"role": message.get("role"), "kind": message.get("kind"), "content": (message.get("content") or "")[:600]}
+            for message in state.get("messages", [])[-20:]
+        ]
         workflow = state.get("mira_workflow", {})
         prompt = "\n\n".join(
             [
                 "USER PROFILE\n" + json.dumps(state.get("profile", {}), indent=2),
-                "CONTENT BANK\n" + json.dumps(state.get("content_bank", [])[:5], indent=2),
+                "PIPELINE STATE\n" + json.dumps(DemoStore._pipeline_state(state), indent=2),
+                "RELEVANT CONTENT BANK ENTRIES\n" + json.dumps(DemoStore._relevant_memories(state, content), indent=2),
+                "LONG-TERM SIGNALS (durable preferences and outcomes from past sessions)\n"
+                + ("\n".join(DemoStore._conversation_signals(state)) or "None yet."),
                 "MIRA WORKFLOW STATE\n" + json.dumps(workflow, indent=2),
-                "RECENT CHAT\n" + json.dumps(messages, indent=2),
+                "RECENT CHAT\n" + json.dumps(window, indent=2),
                 "LATEST USER MESSAGE\n" + content,
             ]
         )

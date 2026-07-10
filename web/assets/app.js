@@ -18,6 +18,9 @@ const ui = {
   loading: false,
   scrollChatAfterRender: false,
   quickActionsOpen: false,
+  chatGuideOpen: false,
+  calendarOffset: 0,
+  proactiveDismissed: false,
   pendingMessages: [],
   reviewDraftId: null,
   expandedLibraryPosts: new Set(),
@@ -248,11 +251,16 @@ function bindGlobal() {
     button.onclick = startDraft;
   });
   document.querySelectorAll('[data-action="quick-actions"]').forEach((button) => {
-    button.onclick = () => {
+    button.onclick = (event) => {
+      event.stopPropagation();
       ui.quickActionsOpen = !ui.quickActionsOpen;
       render();
     };
   });
+  if (ui.quickActionsOpen) {
+    document.addEventListener("click", closeQuickActionsOnOutsideClick);
+    document.addEventListener("keydown", closeQuickActionsOnEscape);
+  }
   document.querySelectorAll('[data-action="qa-draft"]').forEach((button) => {
     button.onclick = startDraft;
   });
@@ -284,6 +292,23 @@ function bindGlobal() {
   document.querySelectorAll('[data-action="sample-draft"]').forEach((button) => {
     button.onclick = createSampleDraft;
   });
+}
+
+function closeQuickActionsOnOutsideClick(event) {
+  if (event.target.closest(".quick-actions-wrap")) return;
+  closeQuickActions();
+}
+
+function closeQuickActionsOnEscape(event) {
+  if (event.key === "Escape") closeQuickActions();
+}
+
+function closeQuickActions() {
+  document.removeEventListener("click", closeQuickActionsOnOutsideClick);
+  document.removeEventListener("keydown", closeQuickActionsOnEscape);
+  if (!ui.quickActionsOpen) return;
+  ui.quickActionsOpen = false;
+  render();
 }
 
 function startDraft() {
@@ -507,20 +532,33 @@ function renderChat() {
   }];
   const messages = [...savedMessages, ...ui.pendingMessages];
   const timeline = chatTimeline(messages, activeDrafts);
+  const hasActivity = ui.state.content_bank.length > 0
+    || ui.state.posts.some((post) => post.status !== "deleted")
+    || (ui.state.messages?.length || 0) > 0;
+  const weekCards = `<div class="grid">
+        <div class="card"><div class="card-head"><h3>This week</h3><span class="badge ${published >= goal ? "published" : "pending"}">${published}/${goal} posts</span></div><div class="metric">${Math.min(Math.round((published / goal) * 100), 100)}%</div><div class="progress"><span style="width:${Math.min((published / goal) * 100, 100)}%"></span></div><div class="muted small">Based on your ${escapeHtml(profile.posting_frequency.replaceAll("_", " "))} goal.</div></div>
+        <div class="card"><div class="card-head"><h3>Content Bank</h3><span class="badge published">${ui.state.content_bank.length} entries</span></div><p class="muted">Your latest real-world context makes every draft more personal.</p><button class="button secondary" data-tab="bank">Add today’s insight</button></div>
+      </div>`;
+  const { completedCount, total } = goldenPathStats();
+  const intro = hasActivity
+    ? `${workflowProgress()}
+      <details class="chat-guide" id="chat-guide" ${ui.chatGuideOpen ? "open" : ""}>
+        <summary>Workflow guide · ${completedCount}/${total} steps done · ${published}/${goal} posts this week</summary>
+        <div class="chat-guide-body">${miraBrief()}${workflowGuide()}${weekCards}</div>
+      </details>`
+    : `<p class="lead">Mira now follows a clearer content workflow: capture a real moment, choose an angle, then create a review-ready LinkedIn draft.</p>
+      ${workflowProgress()}
+      ${miraBrief()}
+      ${workflowGuide()}
+      ${weekCards}`;
   return `
     <section class="page">
       <div class="eyebrow">Your content workdesk</div>
       <h1>Good ${new Date().getHours() < 12 ? "morning" : "afternoon"}, ${escapeHtml(profile.first_name)}.</h1>
-      <p class="lead">Mira now follows a clearer content workflow: capture a real moment, choose an angle, then create a review-ready LinkedIn draft.</p>
-      ${workflowProgress()}
-      ${miraBrief()}
-      ${workflowGuide()}
-      <div class="grid">
-        <div class="card"><div class="card-head"><h3>This week</h3><span class="badge ${published >= goal ? "published" : "pending"}">${published}/${goal} posts</span></div><div class="metric">${Math.min(Math.round((published / goal) * 100), 100)}%</div><div class="progress"><span style="width:${Math.min((published / goal) * 100, 100)}%"></span></div><div class="muted small">Based on your ${escapeHtml(profile.posting_frequency.replaceAll("_", " "))} goal.</div></div>
-        <div class="card"><div class="card-head"><h3>Content Bank</h3><span class="badge published">${ui.state.content_bank.length} entries</span></div><p class="muted">Your latest real-world context makes every draft more personal.</p><button class="button secondary" data-tab="bank">Add today’s insight</button></div>
-      </div>
+      ${intro}
       <div class="chat-stream" data-testid="chat-stream" style="margin-top:18px">
         ${timeline}
+        ${proactiveBubble()}
         ${ui.loading ? '<div class="bubble mira typing"><strong>Mira</strong><br>Thinking through the angle…</div>' : ""}
       </div>
       <div class="composer">
@@ -571,6 +609,19 @@ function miraBrief() {
       <button data-action="qa-draft"><span>2</span><strong>Draft</strong><small>Turn context into a post.</small></button>
       <button data-tab="library"><span>3</span><strong>Review</strong><small>Edit, approve, copy, or skip.</small></button>
     </div>
+  </div>`;
+}
+
+function proactiveBubble() {
+  const brief = ui.state.proactive_brief;
+  if (!brief || ui.proactiveDismissed || ui.loading) return "";
+  const action = brief.action === "review_draft"
+    ? `<button class="button" data-testid="proactive-action" data-draft-review="${brief.post_id}">Open draft workspace</button>`
+    : brief.action === "draft_latest_memory"
+      ? '<button class="button" data-testid="proactive-action" data-prompt="Draft from my latest memory">Draft it</button>'
+      : "";
+  return `<div class="bubble mira proactive" data-testid="proactive-brief"><strong>Mira</strong><br>${escapeHtml(brief.message)}
+    <div class="proactive-actions">${action}<button class="button ghost" data-proactive-dismiss>Not now</button></div>
   </div>`;
 }
 
@@ -759,12 +810,17 @@ function variantRail(post) {
   </div>`;
 }
 
-function workflowGuide() {
+function goldenPathStats() {
   const hasMemory = ui.state.content_bank.length > 0;
   const hasDraft = ui.state.posts.some((post) => post.status === "pending");
   const hasLibrary = ui.state.posts.some((post) => post.status !== "deleted");
   const hasScheduled = ui.state.posts.some((post) => ["scheduled", "published"].includes(post.status));
   const completedCount = [hasMemory, hasDraft || hasLibrary, hasLibrary, hasScheduled].filter(Boolean).length;
+  return { hasMemory, hasDraft, hasLibrary, hasScheduled, completedCount, total: 4 };
+}
+
+function workflowGuide() {
+  const { hasMemory, hasDraft, hasLibrary, hasScheduled, completedCount } = goldenPathStats();
   const nextAction = !hasMemory
     ? "Start by adding one real memory."
     : !(hasDraft || hasLibrary)
@@ -939,7 +995,7 @@ function filteredLibraryPosts() {
 function libraryEmptyState() {
   if (ui.librarySearch.trim()) return '<div class="empty">No Library items match that search.</div>';
   if (ui.libraryFilter !== "all") return '<div class="empty">No posts in this status yet.</div>';
-  return '<div class="empty">No posts yet. Draft one with Mira.</div>';
+  return '<div class="empty"><span>No posts yet. Your drafts, scheduled, and published posts will live here.</span><button class="button" data-tab="chat">Draft one with Mira</button></div>';
 }
 
 function libraryItem(post) {
@@ -959,24 +1015,85 @@ function libraryItem(post) {
   </div>`;
 }
 
+function postsOnDay(year, month, day) {
+  return ui.state.posts.filter((post) => {
+    if (!["scheduled", "published"].includes(post.status)) return false;
+    const date = new Date(post.scheduled_at || post.published_at);
+    return date.getFullYear() === year && date.getMonth() === month && date.getDate() === day;
+  });
+}
+
 function renderCalendar() {
   const scheduled = ui.state.posts.filter((post) => ["scheduled", "published"].includes(post.status));
+  const hasPending = ui.state.posts.some((post) => post.status === "pending");
   const now = new Date();
-  const year = now.getFullYear(), month = now.getMonth();
+  const viewed = new Date(now.getFullYear(), now.getMonth() + ui.calendarOffset, 1);
+  const year = viewed.getFullYear(), month = viewed.getMonth();
   const firstDay = new Date(year, month, 1).getDay();
   const days = new Date(year, month + 1, 0).getDate();
-  const cells = Array(firstDay).fill('<div class="day"></div>');
+  const cells = Array(firstDay).fill('<div class="day is-empty"></div>');
   for (let day = 1; day <= days; day++) {
-    const matches = scheduled.filter((post) => {
-      const date = new Date(post.scheduled_at || post.published_at);
-      return date.getFullYear() === year && date.getMonth() === month && date.getDate() === day;
-    });
-    cells.push(`<div class="day ${matches.length ? "has-post" : ""}"><strong>${day}</strong>${matches.map((post) => `<div class="small" style="margin-top:8px"><span class="dot ${post.status}"></span>${escapeHtml(post.schedule_label || post.status)}</div>`).join("")}</div>`);
+    const matches = postsOnDay(year, month, day);
+    const isToday = ui.calendarOffset === 0 && day === now.getDate();
+    const dayDate = new Date(year, month, day);
+    const isPast = dayDate < new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const clickable = matches.length > 0 || (hasPending && !isPast);
+    cells.push(`<${clickable ? "button" : "div"} class="day ${matches.length ? "has-post" : ""} ${isToday ? "today" : ""}" ${clickable ? `data-calendar-day="${day}" aria-label="Open ${viewed.toLocaleString("en", { month: "long" })} ${day}"` : ""}><strong>${day}</strong>${matches.map((post) => `<div class="small day-post"><span class="dot ${post.status}"></span>${escapeHtml(post.schedule_label || post.status)}</div>`).join("")}</${clickable ? "button" : "div"}>`);
   }
-  return `<section class="page" data-testid="calendar-page"><div class="eyebrow">Schedule</div><h1>${now.toLocaleString("en", { month: "long" })} ${year}</h1><p class="lead">Green marks published content. Purple marks posts Mira has scheduled.</p>
+  return `<section class="page" data-testid="calendar-page"><div class="eyebrow">Schedule</div>
+    <div class="calendar-head">
+      <h1>${viewed.toLocaleString("en", { month: "long" })} ${year}</h1>
+      <div class="calendar-nav">
+        <button class="icon-button" data-calendar-nav="-1" aria-label="Previous month">‹</button>
+        ${ui.calendarOffset !== 0 ? '<button class="icon-button calendar-today" data-calendar-nav="0">Today</button>' : ""}
+        <button class="icon-button" data-calendar-nav="1" aria-label="Next month">›</button>
+      </div>
+    </div>
+    <p class="lead"><span class="dot published"></span>Published · <span class="dot scheduled"></span>Scheduled${hasPending ? " · Tap a day to schedule a pending draft." : ""}</p>
     <div class="card calendar-card"><div class="calendar">${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((day) => `<div class="day-label">${day}</div>`).join("")}${cells.join("")}</div></div>
-    <div class="list" style="margin-top:18px">${scheduled.length ? scheduled.map((post) => `<div class="list-item"><div class="list-top"><strong>${escapeHtml(post.title)}</strong><span class="badge ${post.status}">${post.status}</span></div><p>${escapeHtml(scheduleSummary(post))}</p></div>`).join("") : '<div class="empty">Nothing scheduled yet. Approve a draft to place it here.</div>'}</div>
+    <div class="list" style="margin-top:18px">${scheduled.length ? scheduled.map((post) => `<div class="list-item"><div class="list-top"><strong>${escapeHtml(post.title)}</strong><span class="badge ${post.status}">${post.status}</span></div><p>${escapeHtml(scheduleSummary(post))}</p></div>`).join("") : '<div class="empty"><span>Nothing scheduled yet. Approve a draft to place it here.</span><button class="button secondary" data-tab="library">Open Library</button></div>'}</div>
   </section>`;
+}
+
+function showDayModal(day) {
+  const now = new Date();
+  const viewed = new Date(now.getFullYear(), now.getMonth() + ui.calendarOffset, 1);
+  const year = viewed.getFullYear(), month = viewed.getMonth();
+  const posts = postsOnDay(year, month, day);
+  const pending = ui.state.posts.filter((post) => post.status === "pending");
+  const dayDate = new Date(year, month, day);
+  const isPast = dayDate < new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const title = dayDate.toLocaleDateString("en", { weekday: "long", month: "long", day: "numeric" });
+  const pad = (value) => String(value).padStart(2, "0");
+  const defaultTime = `${year}-${pad(month + 1)}-${pad(day)}T09:00`;
+  ui.modal = `<div class="modal-backdrop"><div class="modal" data-testid="day-modal">
+    <div class="modal-head"><h3>${escapeHtml(title)}</h3><button class="icon-button" data-modal-close="true" aria-label="Close day view">Close</button></div>
+    ${posts.length ? `<div class="list">${posts.map((post) => `<div class="list-item"><div class="list-top"><strong>${escapeHtml(post.title)}</strong><span class="badge ${post.status}">${post.status}</span></div><p>${escapeHtml(scheduleSummary(post))}</p><div class="inline-actions"><button class="button secondary" data-day-open-draft="${post.id}">Open draft workspace</button></div></div>`).join("")}</div>` : '<p class="muted">Nothing on this day yet.</p>'}
+    ${!isPast && pending.length ? `<div class="custom-schedule" style="margin-top:14px">
+      <label>Schedule a pending draft on this day</label>
+      <select class="input" id="day-schedule-draft">${pending.map((post) => `<option value="${post.id}">${escapeHtml(post.title)}</option>`).join("")}</select>
+      <input class="input" id="day-scheduled-at" type="datetime-local" value="${defaultTime}" style="grid-column: 1 / -1" />
+      <button class="button" id="day-schedule-confirm" style="grid-column: 1 / -1">Schedule here</button>
+    </div>` : ""}
+    <div class="modal-status" data-modal-status></div>
+    <div class="modal-actions"><button class="button ghost" id="cancel-modal">Done</button></div>
+  </div></div>`;
+  render();
+  const close = () => { ui.modal = null; render(); };
+  document.querySelector("#cancel-modal").onclick = close;
+  document.querySelector("[data-modal-close]")?.addEventListener("click", close);
+  document.querySelectorAll("[data-day-open-draft]").forEach((button) => {
+    button.onclick = () => { ui.modal = null; reviewDraft(button.dataset.dayOpenDraft); };
+  });
+  const confirm = document.querySelector("#day-schedule-confirm");
+  if (confirm) {
+    confirm.onclick = () => {
+      const draftId = document.querySelector("#day-schedule-draft")?.value;
+      const value = document.querySelector("#day-scheduled-at")?.value;
+      if (!draftId || !value) return;
+      approveDraft(draftId, "custom", new Date(value).toISOString());
+    };
+  }
 }
 
 function renderAnalytics() {
@@ -1356,6 +1473,21 @@ function bindView() {
   document.querySelector("#profile-form")?.addEventListener("submit", saveProfile);
   document.querySelector("#reset-demo")?.addEventListener("click", resetDemo);
   document.querySelector("#connect-linkedin")?.addEventListener("click", connectLinkedIn);
+  const chatGuide = document.querySelector("#chat-guide");
+  if (chatGuide) chatGuide.addEventListener("toggle", () => { ui.chatGuideOpen = chatGuide.open; });
+  document.querySelectorAll("[data-calendar-nav]").forEach((button) => {
+    button.onclick = () => {
+      const step = Number(button.dataset.calendarNav);
+      ui.calendarOffset = step === 0 ? 0 : ui.calendarOffset + step;
+      render();
+    };
+  });
+  document.querySelectorAll("[data-calendar-day]").forEach((button) => {
+    button.onclick = () => showDayModal(Number(button.dataset.calendarDay));
+  });
+  document.querySelectorAll("[data-proactive-dismiss]").forEach((button) => {
+    button.onclick = () => { ui.proactiveDismissed = true; render(); };
+  });
   document.querySelectorAll("[data-prompt]").forEach((button) => {
     button.onclick = () => submitPrompt(button.dataset.prompt);
   });
