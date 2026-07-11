@@ -93,9 +93,10 @@ POST /posts/{post_id}/edit
 POST /posts/{post_id}/skip
 ```
 
-The original route handlers remain placeholders. The web app uses the `/api`
-MVP endpoints and a JSON demo store so the product flow can be tested while the
-production database/auth layers are still being connected.
+The web app uses the `/api` endpoints. In staging, authenticated users and their
+profiles, Content Bank entries, drafts, and messages are persisted in separate
+Postgres workspace tables. Local development can still use JSON files by setting
+`USE_DATABASE_STORAGE=false`.
 
 ## Current integration status
 
@@ -143,6 +144,6 @@ Start command: uvicorn app.main:app --host 0.0.0.0 --port $PORT
 Health check path: /health
 ```
 
-The local MVP uses `data/demo_state.json` for demo persistence. The Render
-blueprint mounts a small persistent disk at `data/` so demo data survives
-service restarts.
+The Render blueprint enables Postgres persistence with
+`USE_DATABASE_STORAGE=true`. The persistent disk remains available for local
+fallback data, but authenticated staging workspaces no longer depend on it.

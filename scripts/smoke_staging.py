@@ -61,12 +61,18 @@ def main() -> int:
         "" if anthropic_ok else "Mira will use the deterministic fallback",
     )
     linkedin = integrations.get("linkedin", {})
+    database = integrations.get("database", {})
+    check(
+        database.get("storage") == "postgres"
+        and database.get("workspace_schema") == "relational-v1",
+        "Postgres relational workspace storage active",
+        f"storage: {database.get('storage')}, schema: {database.get('workspace_schema')}",
+    )
     check(
         bool(linkedin.get("configured")),
         "LinkedIn OAuth credentials configured",
         "" if linkedin.get("configured") else "manual copy/open fallback only",
     )
-    print(f"       database storage: {integrations.get('database', {}).get('storage')}")
 
     # 3. Isolated user flow: register → onboard → chat → draft → approve
     email = f"smoke-{uuid.uuid4().hex[:10]}@example.com"

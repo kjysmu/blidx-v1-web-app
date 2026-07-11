@@ -32,6 +32,7 @@ def integration_status() -> dict:
             "storage": "postgres" if settings.USE_DATABASE_STORAGE else "file",
             "configured": bool(settings.DATABASE_URL),
             "persistent_auth": bool(settings.USE_DATABASE_STORAGE and settings.DATABASE_URL),
+            "workspace_schema": "relational-v1" if settings.USE_DATABASE_STORAGE else "json-files",
         },
         "linkedin": {
             "configured": linkedin.configured,

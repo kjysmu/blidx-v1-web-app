@@ -20,7 +20,7 @@ services:
       - key: DEBUG
         value: "false"
       - key: USE_DATABASE_STORAGE
-        value: "false"
+        value: "true"
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET_KEY

@@ -11,6 +11,11 @@ def test_final_v1_tables_are_registered():
         "content_bank",
         "posts",
         "user_workspaces",
+        "workspace_profiles",
+        "workspace_memories",
+        "workspace_posts",
+        "workspace_messages",
+        "workspace_metadata",
     }
 
 

@@ -14,7 +14,7 @@ from app.core.config import settings
 from app.core.database import SessionLocal
 from app.integrations.llm import ClaudeProvider
 from app.models.user import User
-from app.models.user_workspace import UserWorkspace
+from app.repositories.workspace_repository import workspace_repository
 
 
 class CurrentUserContext:
@@ -167,41 +167,17 @@ class DemoStore:
 
     def _read_db_state(self) -> dict:
         user_id = current_user_id.get()
-        parsed_user_id = uuid.UUID(user_id)
-        with SessionLocal() as db:
-            workspace = (
-                db.query(UserWorkspace)
-                .filter(UserWorkspace.user_id == parsed_user_id)
-                .first()
-            )
-            if workspace is None:
-                workspace = UserWorkspace(
-                    user_id=parsed_user_id,
-                    state=self._initial_state(self._db_user_block(db, parsed_user_id)),
-                )
-                db.add(workspace)
-                db.commit()
-                db.refresh(workspace)
-            return self._normalize_state(deepcopy(workspace.state))
+        state = workspace_repository.load(user_id)
+        if state is None:
+            parsed_user_id = uuid.UUID(user_id)
+            with SessionLocal() as db:
+                state = self._initial_state(self._db_user_block(db, parsed_user_id))
+            workspace_repository.save(user_id, state)
+        return self._normalize_state(state)
 
     def _write_db_state(self, state: dict) -> None:
         user_id = current_user_id.get()
-        parsed_user_id = uuid.UUID(user_id)
-        with SessionLocal() as db:
-            workspace = (
-                db.query(UserWorkspace)
-                .filter(UserWorkspace.user_id == parsed_user_id)
-                .first()
-            )
-            if workspace is None:
-                workspace = UserWorkspace(
-                    user_id=parsed_user_id,
-                    state=deepcopy(state),
-                )
-                db.add(workspace)
-            else:
-                workspace.state = deepcopy(state)
-            db.commit()
+        workspace_repository.save(user_id, state)
 
     @staticmethod
     def _db_user_block(db, user_id: uuid.UUID) -> dict:
