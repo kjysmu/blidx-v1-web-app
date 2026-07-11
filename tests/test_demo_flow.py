@@ -204,6 +204,50 @@ def test_generic_chat_draft_does_not_force_company_anchor(monkeypatch):
     client.post("/api/reset")
 
 
+def test_just_draft_it_never_becomes_the_draft_topic_without_prior_subject(monkeypatch):
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
+    client.post("/api/reset")
+
+    first = client.post(
+        "/api/chat/message",
+        json={"message": "just draft it"},
+    )
+    second = client.post(
+        "/api/chat/message",
+        json={"message": "just draft it"},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    for response in (first, second):
+        payload = response.json()
+        assert payload["actions"] == ["topic_requested"]
+        assert payload["post"] is None
+        assert "need the subject" in payload["reply"]
+        assert payload["state"]["posts"] == []
+
+    client.post("/api/reset")
+
+
+def test_just_draft_it_does_not_silently_choose_an_unrequested_memory(monkeypatch):
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
+    client.post("/api/reset")
+    client.post(
+        "/api/content-bank",
+        json={"raw_text": "I am a pianist and practiced a Steinway this week."},
+    )
+
+    first = client.post("/api/chat/message", json={"message": "just draft it"})
+    second = client.post("/api/chat/message", json={"message": "just draft it"})
+
+    assert first.json()["actions"] == ["topic_requested"]
+    assert second.json()["actions"] == ["topic_requested"]
+    assert second.json()["post"] is None
+    assert second.json()["state"]["posts"] == []
+
+    client.post("/api/reset")
+
+
 def test_followup_draft_keeps_requested_topic_over_loose_memory(monkeypatch):
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
     client.post("/api/reset")

@@ -343,11 +343,21 @@ class DemoStore:
                     if followup_draft or self._wants_latest_context(content)
                     else self._extract_topic(content)
                 )
-                if not selected_angle_topic and not followup_draft and self._needs_context_before_drafting(state, topic):
+                if self._is_missing_draft_topic(topic):
+                    reply = (
+                        "I'm ready to draft, but I still need the subject. "
+                        "Try something like “draft about AI and healthcare” or choose an angle from your Content Bank."
+                    )
+                    actions = ["topic_requested"]
+                    kind = "context_request"
+                    post_id = None
+                    self._set_workflow(state, stage="topic_needed", last_topic=None)
+                elif not selected_angle_topic and not followup_draft and self._needs_context_before_drafting(state, topic):
                     reply = self._context_request_reply(state, topic)
                     actions = ["context_requested"]
                     kind = "context_request"
                     post_id = None
+                    self._set_workflow(state, stage="context_requested", last_topic=topic)
                 else:
                     post = self._draft(state, topic, "chat")
                     state["posts"].insert(0, post)
@@ -1269,7 +1279,7 @@ class DemoStore:
         )
 
     @staticmethod
-    def _topic_from_context(state: dict, current_content: str | None = None) -> str:
+    def _topic_from_context(state: dict, current_content: str | None = None) -> str | None:
         workflow = state.get("mira_workflow") or {}
         selected_angle = workflow.get("selected_angle") or {}
         if selected_angle.get("prompt"):
@@ -1287,17 +1297,10 @@ class DemoStore:
         recent_topic = DemoStore._topic_from_recent_draft_request(state, current_content)
         if recent_topic:
             return recent_topic
-        if state.get("content_bank"):
-            latest = state["content_bank"][0]["raw_text"]
-            if "ai" in latest.lower() and "mental" in json.dumps(state.get("profile", {})).lower():
-                return "human connection versus AI in mental health"
-            return latest[:140]
-        messages = [
-            message.get("content", "")
-            for message in state.get("messages", [])
-            if message.get("role") == "user"
-        ]
-        return messages[-1] if messages else "a founder insight from this week"
+        last_topic = workflow.get("last_topic")
+        if last_topic and not DemoStore._is_missing_draft_topic(last_topic):
+            return last_topic
+        return None
 
     @staticmethod
     def _topic_from_recent_draft_request(state: dict, current_content: str | None = None) -> str | None:
@@ -1330,6 +1333,22 @@ class DemoStore:
             "sounds good",
         )
         return lowered in affirmative
+
+    @staticmethod
+    def _is_missing_draft_topic(topic: str | None) -> bool:
+        if not topic:
+            return True
+        lowered = topic.lower().strip(" .!?,:\"'“”")
+        if DemoStore._is_affirmative_text(lowered):
+            return True
+        return lowered in {
+            "draft",
+            "write",
+            "write a post",
+            "create a post",
+            "make a post",
+            "linkedin post",
+        }
 
     @staticmethod
     def _provider_label(post: dict) -> str:
