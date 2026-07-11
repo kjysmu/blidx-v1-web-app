@@ -907,7 +907,9 @@ class DemoStore:
         if post_id:
             message["post_id"] = post_id
         state.setdefault("messages", []).append(message)
-        state["messages"] = state["messages"][-40:]
+        # Spec §3.2 wants the full history scrollable; 200 keeps the JSON store
+        # bounded while long-term facts persist in conversation_signals.
+        state["messages"] = state["messages"][-200:]
         return message
 
     @staticmethod

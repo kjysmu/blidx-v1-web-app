@@ -28,6 +28,15 @@ const ui = {
   expandedLibraryPosts: new Set(),
 };
 
+// Safety net for async handlers without their own catch: surface the error
+// as a toast and unstick any busy state instead of failing silently.
+window.addEventListener("unhandledrejection", (event) => {
+  event.preventDefault();
+  ui.loading = false;
+  setModalBusy(false);
+  showToast(event.reason?.message || "Something went wrong. Please try again.");
+});
+
 const api = async (path, options = {}) => {
   const authHeaders = ui.auth?.access_token ? { Authorization: `Bearer ${ui.auth.access_token}` } : {};
   const response = await fetch(path, {
