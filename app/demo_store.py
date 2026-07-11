@@ -2,6 +2,7 @@ import json
 import re
 import threading
 import uuid
+import zlib
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -306,7 +307,15 @@ class DemoStore:
             self._append_message(
                 state,
                 "mira",
-                f"I created a review-ready draft for “{topic.strip()}”. You can edit it, save it, approve it, or send it to LinkedIn.",
+                self._pick(
+                    (
+                        f"Draft ready: “{topic.strip()}”. Read it once for truth, then tell me what to change — or approve it.",
+                        f"Here's your draft on “{topic.strip()}”. If it doesn't sound like you yet, that's fixable — just say how.",
+                        f"“{topic.strip()}” is drafted and waiting in review. Edit it, approve it, or send it to LinkedIn.",
+                    ),
+                    topic,
+                    len(state.get("posts", [])),
+                ),
                 kind="draft_created",
                 post_id=post["id"],
             )
@@ -326,9 +335,8 @@ class DemoStore:
 
             if self._is_off_topic(content):
                 reply = (
-                    "I’m going to keep us inside Blidx for now: your LinkedIn content, "
-                    "Content Bank, drafts, publishing, and founder voice. What should we turn "
-                    "into a post?"
+                    "That's outside my area — I'm focused on making your LinkedIn content "
+                    "exceptional. Anything content-related I can help with right now?"
                 )
                 self._append_message(state, "mira", reply, kind="redirect")
                 self._write(state)
@@ -366,9 +374,14 @@ class DemoStore:
                 else:
                     post = self._draft(state, topic, "chat")
                     state["posts"].insert(0, post)
-                    reply = (
-                        "I drafted it and kept it in the review workspace. "
-                        "Read it once for truth, then choose the next move: revise the voice, save it, schedule it, or use the LinkedIn fallback."
+                    reply = self._pick(
+                        (
+                            "Draft's ready. Read it once for truth — if anything doesn't sound like you, tell me what to change.",
+                            "Here's the draft. If the hook doesn't stop you, we sharpen it. Otherwise, approve it or send it to LinkedIn.",
+                            "Done — take a look. I'd rather you push back now than post something that doesn't feel yours.",
+                        ),
+                        topic,
+                        len(state.get("posts", [])),
                     )
                     actions = ["draft_created"]
                     kind = "draft_created"
@@ -1018,15 +1031,30 @@ class DemoStore:
             memory.get("id"),
         )
         angle_lines = "\n\n".join(
-            f"{index}/ {angle['title']}: {angle['detail']} Framework: {DemoStore._framework_label(angle.get('framework'))}."
+            f"{index}/ {angle['title']}: {angle['detail']}"
             for index, angle in enumerate(angles, start=1)
         )
+        opener = DemoStore._pick(
+            (
+                "Saved to your Content Bank — this one has real texture.",
+                "Got it, that's in your Content Bank. There's a post hiding in here.",
+                "Saved. Moments like this are exactly what makes content sound like you.",
+            ),
+            raw_text,
+        )
+        closer = DemoStore._pick(
+            (
+                "Which one feels most like you? Pick an angle and I'll draft it.",
+                "Want me to draft one of these? Just pick an angle.",
+                "Tap an angle and I'll turn it into a draft.",
+            ),
+            raw_text,
+            len(state.get("messages", [])),
+        )
         return (
-            "Step 1/4 captured: I saved this to your Content Bank.\n\n"
-            f"Why it matters for {audience_label}: it has a real scene, so the post can sound owned instead of AI-generated.\n\n"
-            "Step 2/4 choose the angle before drafting:\n\n"
+            f"{opener} For {audience_label}, I can see a few ways in:\n\n"
             f"{angle_lines}\n\n"
-            "Reply with “angle 1”, “angle 2”, or “angle 3”. I’ll draft from that choice next."
+            f"{closer}"
         )
 
     @staticmethod
@@ -1651,8 +1679,17 @@ class DemoStore:
                 if use_company
                 else "That is the part of the work I think founders often lose too quickly."
             )
+            field_note_opener = DemoStore._pick(
+                (
+                    "A small note from this week:",
+                    "Something from this week that stuck with me:",
+                    "I keep coming back to one moment from this week.",
+                ),
+                topic,
+                len(state.get("posts", [])),
+            )
             return (
-                f"A small note from this week:\n\n"
+                f"{field_note_opener}\n\n"
                 f"{personal_block}\n\n"
                 "The obvious takeaway would be to write faster.\n\n"
                 "I think the better takeaway is quieter: protect the moment before it gets flattened into a generic opinion.\n\n"
@@ -1890,13 +1927,19 @@ class DemoStore:
         company = profile.get("company_name") or "your work"
         if "latest memory" in topic.lower() or "content bank" in topic.lower():
             return (
-                "I can draft from the Content Bank, but there is not a strong matching memory yet. "
-                "Give me one real moment first: what happened, why it mattered, and what it changed in your thinking?"
+                "I don't have a strong memory to build from yet. "
+                "Give me one real moment first — what happened, and why did it stick with you?"
             )
-        return (
-            f"I can draft about {topic}, but I do not want to give you a generic AI-looking post.\n\n"
-            f"Give me one concrete detail from {company}: a moment, conversation, decision, event, or tension behind this topic. "
-            "One sentence is enough. If you want me to draft without that context anyway, say “just draft it.”"
+        return DemoStore._pick(
+            (
+                f"I can draft about {topic}, but without something real behind it, it'll read like every other AI post on LinkedIn. "
+                f"What's one concrete moment from {company} — a conversation, a decision, a number that surprised you? One sentence is enough. "
+                "Or say “just draft it” and I'll work without it.",
+                f"Happy to take on {topic}. One thing first: give me one concrete detail from {company} that made this feel real — "
+                "a meeting, a mistake, a result. That's what separates your post from a generic one. "
+                "If you'd rather skip it, say “just draft it.”",
+            ),
+            topic,
         )
 
     @staticmethod
@@ -1976,6 +2019,20 @@ class DemoStore:
             return None
 
     @staticmethod
+    def _recent_openings(state: dict, limit: int = 4) -> list[str]:
+        """First lines of recent drafts, so the next draft can avoid repeating them."""
+        openings = []
+        for post in state.get("posts", []):
+            if post.get("status") == "deleted":
+                continue
+            first_line = (post.get("content") or "").strip().split("\n", 1)[0][:120]
+            if first_line:
+                openings.append(first_line)
+            if len(openings) >= limit:
+                break
+        return openings
+
+    @staticmethod
     def _context_package(state: dict, topic: str) -> str:
         profile = state["profile"]
         topic = DemoStore._clean_topic(topic)
@@ -1984,6 +2041,7 @@ class DemoStore:
         writing_samples = profile.get("writing_samples") or []
         avoided = profile.get("avoided_phrases") or []
         framework = DemoStore._fallback_style(state, topic)
+        recent_openings = DemoStore._recent_openings(state)
 
         return "\n\n".join(
             [
@@ -2019,16 +2077,37 @@ class DemoStore:
                     if memories
                     else "No matching Content Bank entry. Do not invent personal context; make the post more observational and less specific."
                 ),
-                "QUALITY BAR\n"
-                "1. Data plus emotion: connect facts to lived experience.\n"
-                "2. Rhetorical questions: pull readers into reflection.\n"
-                "3. Numbered structure when useful: 1/, 2/, 3/.\n"
-                "4. Vulnerability with strength: honest, resilient, never performative.\n"
-                "5. Call to connection: invite readers into the conversation.\n"
-                "6. Measured but passionate: conviction with humility.\n"
-                "7. Human specificity: avoid generic AI cadence, tidy fake certainty, and recycled thought-leadership phrases.",
+                "AVOID REPEATING YOURSELF\n"
+                + (
+                    "These are the opening lines of this founder's recent drafts. Do NOT open the same way, "
+                    "and use a visibly different overall structure from the drafts they came from:\n"
+                    + "\n".join(f"- {opening}" for opening in recent_openings)
+                    if recent_openings
+                    else "This is the founder's first draft. Set a strong, natural opening."
+                ),
+                "SOUND HUMAN\n"
+                "Write the way a sharp founder actually writes on LinkedIn, not the way AI writes:\n"
+                "- Commit to ONE approach that fits this specific topic (a scene, an opinion, a question, a "
+                "number, a short story). Do not stack devices; a post that uses a hook, a numbered list, a "
+                "rhetorical question, and a call-to-action every time reads as AI.\n"
+                "- Vary sentence length. Let one sentence be abrupt. Let another run on a little.\n"
+                "- Banned patterns: 'It's not about X, it's about Y', perfectly parallel triads, "
+                "'Here's the thing', 'Let that sink in', em-dash chains, a moral neatly stated at the end, "
+                "and closing with 'Thoughts?' or an invitation to 'drop a comment'.\n"
+                "- Numbered lists (1/ 2/ 3/) are allowed at most sometimes — skip them unless the content "
+                "is genuinely list-shaped.\n"
+                "- Imperfection is fine. Certainty everywhere is a tell. A real person hedges once and "
+                "commits once.\n"
+                "- Concrete beats abstract: one number, one name, one moment does more than three adjectives.",
             ]
         )
+
+    @staticmethod
+    def _pick(options: tuple, *seeds: object) -> str:
+        """Deterministic variety: same seeds give the same line, different
+        turns give different lines, so Mira never sounds like a template."""
+        digest = zlib.crc32("|".join(str(seed) for seed in seeds).encode())
+        return options[digest % len(options)]
 
     @staticmethod
     def _record_signal(state: dict, signal: str) -> None:
@@ -2273,22 +2352,33 @@ class DemoStore:
             return None
 
         system_prompt = (
-            "You are Mira, Blidx's content operating partner. You are not a generic assistant. "
-            "Your job is to help a founder turn real work into LinkedIn content. "
-            "Be calm, specific, and editorial. Avoid robotic phrases, hype, and repeated templates. "
-            "Do not always use the same structure. Sometimes ask one sharp question; sometimes offer options; "
-            "sometimes name the strongest angle directly. Keep replies short enough for a chat screen. "
-            "When the user asks for ideas, angles, or what to post, act like a content strategist first: "
-            "give a strategic read, name why the idea works or does not work, identify audience fit, "
-            "and ask for the missing concrete detail before drafting. "
-            "When suggesting angles, format them exactly as '1/ Angle title: one-sentence explanation.' "
-            "so the product can offer draft actions. If the user's topic is broad and lacks a real moment, "
-            "ask for one concrete detail before drafting. Respect the user's voice controls. "
-            "Use PIPELINE STATE to be proactive: mention pending drafts waiting on review or a weekly goal "
-            "gap when it is genuinely useful, not as a nag. Only cite numbers that appear in PIPELINE STATE; "
-            "never invent metrics, impressions, comment text, or events that are not in the provided context. "
-            "If the user is rude or frustrated, stay professional: acknowledge what missed the mark, ask what "
-            "specifically felt off, and redirect to actionable content work. Never be defensive."
+            "You are Mira, the content expert working alongside a founder inside Blidx. You are a sharp, "
+            "warm human editor in a chat window — not an AI assistant, and it should never read like one.\n\n"
+            "Voice rules:\n"
+            "- Default to 1-4 sentences. Long structured breakdowns are the exception, used only when the "
+            "user explicitly asks for depth.\n"
+            "- Talk like the person you are: use the founder's first name occasionally, react to what they "
+            "actually said, have opinions ('That's a strong take', 'Honestly, this needs a real moment "
+            "behind it').\n"
+            "- Vary your rhythm and structure between replies. Never open two consecutive replies the same "
+            "way. No fixed sequence, no step counters, no 'Strategic read:' headers, no scores.\n"
+            "- Banned tells: 'delve', 'leverage', 'game changer', 'in today's fast-paced world', "
+            "'it's not just X, it's Y', starting a reply with 'Great question', emoji unless the user uses "
+            "them first, and bullet lists when a sentence would do.\n"
+            "- End with natural forward motion (a question or a concrete offer), not a summary.\n\n"
+            "Craft rules:\n"
+            "- When the user shares something real, react to the specific content first — name what's "
+            "interesting about it like an editor would ('Event recaps do well within 24 hours', 'That "
+            "contrarian take is backed by your own data').\n"
+            "- When suggesting angles, keep your framing short and format the options exactly as "
+            "'1/ Angle title: one-sentence explanation.' so the product can turn them into buttons.\n"
+            "- If a topic is broad with no real moment behind it, say so plainly and ask for one concrete "
+            "detail before drafting.\n"
+            "- Use PIPELINE STATE to be proactive when genuinely useful, never as a nag. Only cite numbers "
+            "that appear in PIPELINE STATE; never invent metrics, impressions, comment text, or events.\n"
+            "- If the user is rude or frustrated: acknowledge what missed, ask what specifically felt off, "
+            "move to fixing it. Never defensive.\n"
+            "- Respect the user's voice controls and profile."
         )
         window = [
             {"role": message.get("role"), "kind": message.get("kind"), "content": (message.get("content") or "")[:600]}
@@ -2327,24 +2417,48 @@ class DemoStore:
         best_angle = DemoStore._best_strategy_angle(topic, latest)
         missing_detail = DemoStore._missing_strategy_detail(topic, latest)
         angles = DemoStore._remember_angle_options(state, topic, latest)
-        recommended_framework = DemoStore._recommended_framework(topic, latest, score)
         angle_lines = "\n\n".join(
-            f"{index}/ {angle['title']}: {angle['detail']} Framework: {DemoStore._framework_label(angle.get('framework'))}."
+            f"{index}/ {angle['title']}: {angle['detail']}"
             for index, angle in enumerate(angles, start=1)
         )
 
+        strengths = DemoStore._sentence_case(strengths)
+        risks = DemoStore._sentence_case(risks)
+        if score >= 4:
+            read = DemoStore._pick(
+                (
+                    f"This is worth posting — {strengths}",
+                    f"Good instinct. {strengths}",
+                    f"I'd post this. {strengths}",
+                ),
+                topic,
+            )
+            ask = DemoStore._pick(
+                (
+                    "Which one feels most like you?",
+                    "Want me to draft the first one?",
+                    "Pick an angle and I'll draft it.",
+                ),
+                topic,
+                len(state.get("messages", [])),
+            )
+        else:
+            read = DemoStore._pick(
+                (
+                    f"Honestly, this needs one real moment behind it before it will land. {risks}",
+                    f"I can work with this, but right now it would come out generic. {risks}",
+                    f"My read: the topic is fine, the material is thin. {risks}",
+                ),
+                topic,
+            )
+            ask = f"Quick question first: {missing_detail} Or pick an angle and I'll work with what we have."
+
         return (
-            f"Step 2/4: choose the angle before drafting.\n\n"
-            f"Strategic read: {label} ({score}/5).\n\n"
-            f"Why it can work: {strengths}\n\n"
-            f"Risk: {risks}\n\n"
-            f"Best angle for {audience_label}: {best_angle}\n\n"
-            f"Recommended draft framework: {DemoStore._framework_label(recommended_framework)}.\n\n"
-            "Mira judgment: I would not draft this as a generic thought-leadership post. I would keep one concrete moment visible and let the opinion come from that.\n\n"
-            "Three draftable directions:\n\n"
+            f"{read}\n\n"
+            f"The strongest direction for {audience_label}: {DemoStore._sentence_case(best_angle)}\n\n"
+            f"Here's how I'd come at it:\n\n"
             f"{angle_lines}\n\n"
-            f"Missing detail before I draft: {missing_detail}\n\n"
-            "Choose “angle 1”, “angle 2”, or “angle 3”, or send the missing detail first."
+            f"{ask}"
         )
 
     @staticmethod

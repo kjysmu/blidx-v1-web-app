@@ -189,8 +189,8 @@ def test_authenticated_golden_path_end_to_end():
     strategy_payload = strategy.json()
     assert strategy_payload["actions"] == ["reply"]
     assert strategy_payload["post"] is None
-    assert "Strategic read" in strategy_payload["reply"]
-    assert "Best angle" in strategy_payload["reply"]
+    assert "strongest direction" in strategy_payload["reply"]
+    assert "1/ " in strategy_payload["reply"]
 
     draft = client.post(
         "/api/chat/message",

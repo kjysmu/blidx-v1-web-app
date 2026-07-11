@@ -184,7 +184,7 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     settings_page.get_by_text("Mira profile details").wait_for()
     settings_page.locator('input[name="first_name"]').wait_for()
 
-    page.locator('[data-action="quick-actions"]').click()
+    # The tester checklist now lives at the bottom of Settings, not the quick menu.
     page.locator('[data-action="qa-status"]').click()
     qa_page = page.locator('[data-testid="qa-page"]')
     qa_page.wait_for()

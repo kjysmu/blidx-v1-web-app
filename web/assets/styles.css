@@ -748,6 +748,10 @@ button.day:hover { border-color: #b8afe8; box-shadow: 0 4px 14px rgba(85,72,184,
   border-bottom: 1px solid var(--line-soft);
 }
 .settings-row:last-child { border-bottom: 0; }
+button.settings-row-link { width: 100%; border: 0; background: white; text-align: left; cursor: pointer; }
+button.settings-row-link:hover { background: #faf9ff; }
+.settings-row-link > span:nth-child(2) { display: block; min-width: 0; }
+.settings-row-link .settings-row-label, .settings-row-link .settings-row-value { display: block; }
 .settings-row-icon {
   width: 34px; height: 34px; display: grid; place-items: center;
   border-radius: 999px; font-size: 16px; background: var(--paper-2);

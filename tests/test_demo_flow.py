@@ -183,7 +183,7 @@ def test_generic_chat_draft_does_not_force_company_anchor(monkeypatch):
     payload = response.json()
     assert payload["actions"] == ["context_requested"]
     assert payload["post"] is None
-    assert "generic AI-looking post" in payload["reply"]
+    assert "just draft it" in payload["reply"]
 
     response = client.post(
         "/api/chat/message",
@@ -257,7 +257,7 @@ def test_mira_asks_for_context_before_generic_draft_request(monkeypatch):
     assert payload["actions"] == ["context_requested"]
     assert payload["post"] is None
     assert payload["state"]["posts"] == []
-    assert "one concrete detail" in payload["reply"]
+    assert "one concrete" in payload["reply"]
 
     response = client.post(
         "/api/chat/message",
@@ -345,12 +345,10 @@ def test_mira_fallback_varies_chat_replies_and_offers_angles():
     assert first["post"] is None
     assert "memory_saved" not in first["actions"]
     assert len(first["state"]["content_bank"]) == 3
-    assert "angle" in second["reply"].lower()
-    assert "Strategic read" in second["reply"]
-    assert "Best angle" in second["reply"]
-    assert "Missing detail" in second["reply"]
-    assert "Recommended draft framework" in second["reply"]
-    assert "Mira judgment" in second["reply"]
+    assert "angle" in second["reply"].lower() or "direction" in second["reply"].lower()
+    assert "strongest direction" in second["reply"]
+    assert "1/ " in second["reply"]
+    assert "2/ " in second["reply"]
 
     client.post("/api/reset")
 
@@ -368,13 +366,12 @@ def test_mira_strategy_layer_critiques_ideas_without_drafting():
     assert payload["actions"] == ["reply"]
     assert payload["post"] is None
     assert payload["state"]["posts"] == []
-    assert "Strategic read" in payload["reply"]
-    assert "Risk:" in payload["reply"]
-    assert "Best angle" in payload["reply"]
-    assert "Best angle for" in payload["reply"]
-    assert "Missing detail" in payload["reply"]
-    assert "Recommended draft framework" in payload["reply"]
-    assert "Mira judgment" in payload["reply"]
+    # Strategy replies stay editorial without drafting: a read, ranked
+    # directions the UI can turn into buttons, and a forward-moving ask.
+    assert "strongest direction" in payload["reply"]
+    assert "1/ " in payload["reply"]
+    assert "2/ " in payload["reply"]
+    assert "3/ " in payload["reply"]
 
     client.post("/api/reset")
 
@@ -394,11 +391,9 @@ def test_mira_saves_memory_then_guides_angle_choice():
     assert payload["actions"] == ["memory_saved", "angles_suggested"]
     assert payload["post"] is None
     assert len(payload["state"]["content_bank"]) == 1
-    assert "Step 1/4 captured" in payload["reply"]
-    assert "Step 2/4 choose the angle" in payload["reply"]
+    assert "Content Bank" in payload["reply"]
     assert "1/ Specific moment" in payload["reply"]
-    assert "Framework: field note" in payload["reply"]
-    assert "Reply with “angle 1”" in payload["reply"]
+    assert "angle" in payload["reply"].lower()
 
     draft_response = client.post(
         "/api/chat/message",

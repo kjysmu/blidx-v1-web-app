@@ -149,8 +149,7 @@ function quickActionsMenu() {
   return `<div class="quick-actions-menu">
     <button data-action="qa-draft"><span>Draft</span><strong>Draft a post</strong><small>Start a Mira draft from any idea.</small></button>
     <button data-action="qa-checkin"><span>Check-in</span><strong>Daily check-in</strong><small>Capture a fresh Content Bank moment.</small></button>
-    <button data-action="qa-progress"><span>Progress</span><strong>Performance & progress</strong><small>Open the lightweight Analytics view.</small></button>
-    <button data-action="qa-status"><span>QA</span><strong>Test checklist</strong><small>See what is testable and what is still limited.</small></button>
+    <button data-action="qa-progress"><span>Progress</span><strong>Performance & progress</strong><small>See your weekly goal and pipeline.</small></button>
   </div>`;
 }
 
@@ -175,7 +174,6 @@ function layout(content) {
       <aside class="sidebar">
         <div class="brand"><span class="brand-mark">B</span> Blidx</div>
         <nav class="nav">${nav}</nav>
-        <div class="side-note"><strong>Staging MVP</strong>${integrationSummary()}</div>
       </aside>
       <main class="main">
         <header class="topbar">
@@ -246,7 +244,7 @@ function bindAuth() {
 
 function accountLabel() {
   if (ui.auth) return escapeHtml(ui.auth.user_name || ui.auth.email || "Account");
-  return "Public demo";
+  return "Guest workspace";
 }
 
 function bindGlobal() {
@@ -606,7 +604,7 @@ function renderChat() {
         <summary>Workflow guide · ${completedCount}/${total} steps done · ${published}/${goal} posts this week</summary>
         <div class="chat-guide-body">${miraBrief()}${workflowGuide()}${weekCards}</div>
       </details>`
-    : `<p class="lead">Mira now follows a clearer content workflow: capture a real moment, choose an angle, then create a review-ready LinkedIn draft.</p>
+    : `<p class="lead">Tell Mira one real thing that happened this week. She'll help you turn it into a LinkedIn post that actually sounds like you.</p>
       ${workflowProgress()}
       ${miraBrief()}
       ${workflowGuide()}
@@ -880,29 +878,28 @@ function goldenPathStats() {
 function workflowGuide() {
   const { hasMemory, hasDraft, hasLibrary, hasScheduled, completedCount } = goldenPathStats();
   const nextAction = !hasMemory
-    ? "Start by adding one real memory."
+    ? "Start by capturing one real moment from your week."
     : !(hasDraft || hasLibrary)
-      ? "Ask Mira to draft from the latest memory."
+      ? "Ask Mira to draft from your latest memory."
       : !hasScheduled
-        ? "Open the draft workspace and approve, save, copy, or skip."
-        : "Check Library, Calendar, and Progress for the final state.";
+        ? "Open the draft workspace and make it yours — approve it when it reads true."
+        : "You're rolling. Keep capturing moments; Mira handles the rest.";
   const items = [
-    ["Save one real moment to Content Bank", hasMemory],
-    ["Generate one review-ready draft", hasDraft || hasLibrary],
-    ["Edit, copy, save, approve, or skip the draft", hasLibrary],
-    ["Check Library, Calendar, and Progress states", hasScheduled],
+    ["Capture one real moment", hasMemory],
+    ["Turn it into a draft with Mira", hasDraft || hasLibrary],
+    ["Review the draft and make it yours", hasLibrary],
+    ["Schedule or publish your first post", hasScheduled],
   ];
   return `<div class="card workflow-card">
-    <div class="card-head"><div><h3>Golden path test</h3><p class="muted small">Use this as the main QA path: onboarding → Content Bank → Mira → draft → review → Library/Calendar.</p></div><span class="badge ${completedCount === items.length ? "published" : hasMemory ? "scheduled" : "draft"}">${completedCount}/${items.length} done</span></div>
+    <div class="card-head"><div><h3>Getting started</h3><p class="muted small">The rhythm that makes content compound: capture a real moment, let Mira shape it, review, and ship.</p></div><span class="badge ${completedCount === items.length ? "published" : hasMemory ? "scheduled" : "draft"}">${completedCount}/${items.length} done</span></div>
     <div class="golden-progress"><span style="width:${Math.round((completedCount / items.length) * 100)}%"></span></div>
     <div class="checklist">${items.map(([label, done]) => `<div class="check ${done ? "done" : ""}"><span>${done ? "✓" : "○"}</span>${label}</div>`).join("")}</div>
-    <div class="next-action"><strong>Next best action</strong><span>${escapeHtml(nextAction)}</span></div>
+    <div class="next-action"><strong>Up next</strong><span>${escapeHtml(nextAction)}</span></div>
     <div class="workflow-actions">
       <button class="button" data-tab="bank">${hasMemory ? "Add another memory" : "Add first memory"}</button>
       <button class="button secondary" data-action="sample-draft" ${hasMemory ? "" : "disabled"}>Draft from latest memory</button>
       <button class="button ghost" data-tab="bank">Open Content Bank</button>
     </div>
-    <p class="muted small">Mira can chat, suggest angles, draft, revise, and move posts into Library/Calendar. Progress is available from the plus menu. LinkedIn has a manual copy/open fallback until OAuth is fully connected.</p>
   </div>`;
 }
 
@@ -1545,8 +1542,15 @@ function renderSettings() {
         <div class="card"><div class="card-head"><h3>Database storage</h3><span class="badge ${databaseIsPostgres ? "published" : "draft"}">${databaseIsPostgres ? "Postgres active" : "File storage"}</span></div><p class="muted">${databaseIsPostgres ? "Signup, login, and workspace state are using the configured Render Postgres database." : "This staging app is still using MVP file-backed storage. Set USE_DATABASE_STORAGE=true and DATABASE_URL in Render to switch to Postgres."}</p></div>
       </div>
       <div class="card" style="margin-top:16px"><div class="card-head"><h3>PayloadCMS review</h3><span class="badge draft">${escapeHtml(payloadcms?.recommendation || "defer")}</span></div><p class="muted">${escapeHtml(payloadcms?.reason || "PayloadCMS review pending.")}</p></div>
+      <div class="settings-group" style="margin-top:16px">
+        <button class="settings-row settings-row-link" data-action="qa-status">
+          <span class="settings-row-icon gray">✓</span>
+          <span><span class="settings-row-label">Tester checklist</span><span class="settings-row-value">What's testable in this build and how to send feedback</span></span>
+          <span class="settings-row-action">›</span>
+        </button>
+      </div>
     </div>
-    <div class="settings-version">Blidx staging MVP · Flow 5 alignment pass</div>
+    <div class="settings-version">Blidx · early access build</div>
   </section>`;
 }
 
@@ -2127,9 +2131,3 @@ function logout() {
 
 refresh().catch((error) => layout(`<div class="page"><div class="notice">Could not load the app: ${escapeHtml(error.message)}</div></div>`));
 
-function integrationSummary() {
-  if (!ui.integrations) return "Loading integration status…";
-  const ai = ui.integrations.anthropic?.configured ? "Claude enabled" : "Claude fallback";
-  const linkedin = ui.integrations.linkedin?.configured ? "LinkedIn OAuth ready" : "LinkedIn copy fallback";
-  return `${ai}. ${linkedin}.`;
-}
