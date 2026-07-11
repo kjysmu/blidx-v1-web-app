@@ -1,6 +1,10 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+DEFAULT_JWT_SECRET_KEY = "change_this_secret"
+PRODUCTION_ENVIRONMENTS = {"production", "staging"}
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env")
 
@@ -11,7 +15,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/blidx"
     USE_DATABASE_STORAGE: bool = False
 
-    JWT_SECRET_KEY: str = "change_this_secret"
+    JWT_SECRET_KEY: str = DEFAULT_JWT_SECRET_KEY
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
 
@@ -35,3 +39,62 @@ class Settings(BaseSettings):
     ADMIN_PASSWORD: str | None = None
 
 settings = Settings()
+
+
+def is_production_environment(config: Settings = settings) -> bool:
+    return config.ENVIRONMENT.strip().lower() in PRODUCTION_ENVIRONMENTS
+
+
+def production_configuration_errors(config: Settings = settings) -> list[str]:
+    if not is_production_environment(config):
+        return []
+
+    errors: list[str] = []
+    if config.DEBUG:
+        errors.append("DEBUG must be false")
+    if not config.USE_DATABASE_STORAGE:
+        errors.append("USE_DATABASE_STORAGE must be true")
+    if not config.DATABASE_URL or "localhost" in config.DATABASE_URL.lower():
+        errors.append("DATABASE_URL must point to a production database")
+    if (
+        config.JWT_SECRET_KEY == DEFAULT_JWT_SECRET_KEY
+        or len(config.JWT_SECRET_KEY) < 32
+    ):
+        errors.append(
+            "JWT_SECRET_KEY must be a unique value of at least 32 characters"
+        )
+
+    linkedin_values = [config.LINKEDIN_CLIENT_ID, config.LINKEDIN_CLIENT_SECRET]
+    if any(linkedin_values) and not all(linkedin_values):
+        errors.append("LinkedIn client ID and secret must be configured together")
+    if all(linkedin_values):
+        if (
+            not config.LINKEDIN_REDIRECT_URI
+            or not config.LINKEDIN_REDIRECT_URI.startswith("https://")
+        ):
+            errors.append("LinkedIn redirect URI must use HTTPS")
+        if (
+            not config.LINKEDIN_TOKEN_ENCRYPTION_KEY
+            or len(config.LINKEDIN_TOKEN_ENCRYPTION_KEY) < 32
+        ):
+            errors.append(
+                "LINKEDIN_TOKEN_ENCRYPTION_KEY must be at least 32 characters"
+            )
+        elif config.LINKEDIN_TOKEN_ENCRYPTION_KEY == config.JWT_SECRET_KEY:
+            errors.append(
+                "LINKEDIN_TOKEN_ENCRYPTION_KEY must differ from JWT_SECRET_KEY"
+            )
+
+    return errors
+
+
+def validate_runtime_configuration(config: Settings = settings) -> None:
+    errors = production_configuration_errors(config)
+    if errors:
+        raise RuntimeError("Unsafe production configuration: " + "; ".join(errors))
+
+
+def security_configuration_status(config: Settings = settings) -> str:
+    if not is_production_environment(config):
+        return "development"
+    return "hardened" if not production_configuration_errors(config) else "unsafe"

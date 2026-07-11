@@ -10,6 +10,7 @@ Usage:
 import json
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -46,8 +47,14 @@ def main() -> int:
     print(f"Smoke testing {base}\n")
 
     # 1. Service is up and serving the app
-    status, _ = request(base, "/health")
+    status, health = request(base, "/health")
     check(status == 200, "health endpoint responds 200")
+    if health.get("environment") in {"production", "staging"}:
+        check(
+            health.get("security") == "hardened",
+            "production security configuration is hardened",
+            f"security: {health.get('security')}",
+        )
     status, body = request(base, "/")
     check(status == 200 and "Blidx" in str(body), "root serves the web app")
 
@@ -76,13 +83,23 @@ def main() -> int:
 
     # 3. Isolated user flow: register → onboard → chat → draft → approve
     email = f"smoke-{uuid.uuid4().hex[:10]}@example.com"
+    password = "smoke-test-password-1"
     status, auth = request(base, "/auth/register", {
         "email": email,
-        "password": "smoke-test-password-1",
+        "password": password,
         "user_name": "Smoke Test",
     })
     token = auth.get("access_token")
     if not check(status == 200 and bool(token), "register throwaway user", email):
+        return finish()
+
+    status, login = request(
+        base,
+        "/auth/login",
+        {"email": email, "password": password},
+    )
+    token = login.get("access_token")
+    if not check(status == 200 and bool(token), "log back in to the new account"):
         return finish()
 
     status, _ = request(base, "/api/onboarding/complete", {
@@ -122,6 +139,30 @@ def main() -> int:
         "user state consistent after flow",
         f"{len(posts)} post(s), {len(state.get('content_bank', []))} memories",
     )
+
+    if linkedin.get("configured"):
+        status, connect = request(
+            base,
+            "/api/integrations/linkedin/connect",
+            {},
+            token=token,
+        )
+        authorization_url = connect.get("authorization_url") or ""
+        parsed = urllib.parse.urlparse(authorization_url)
+        query = urllib.parse.parse_qs(parsed.query)
+        redirect_uri = (query.get("redirect_uri") or [""])[0]
+        scopes = set((query.get("scope") or [""])[0].split())
+        check(
+            status == 200
+            and parsed.scheme == "https"
+            and parsed.netloc == "www.linkedin.com"
+            and bool((query.get("client_id") or [""])[0])
+            and bool((query.get("state") or [""])[0])
+            and redirect_uri == linkedin.get("redirect_uri")
+            and "w_member_social" in scopes,
+            "account-bound LinkedIn OAuth request is ready",
+            redirect_uri,
+        )
     return finish()
 
 

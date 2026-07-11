@@ -5,7 +5,11 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.core.config import settings
+from app.core.config import (
+    security_configuration_status,
+    settings,
+    validate_runtime_configuration,
+)
 from app.api import admin, auth, chat, demo, generate, integrations, memory, posts, profile
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -22,6 +26,7 @@ def initialize_database() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_runtime_configuration()
     initialize_database()
     yield
 
@@ -41,7 +46,12 @@ def root() -> FileResponse:
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "service": settings.APP_NAME}
+    return {
+        "status": "ok",
+        "service": settings.APP_NAME,
+        "environment": settings.ENVIRONMENT,
+        "security": security_configuration_status(),
+    }
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(profile.router, prefix="/profile", tags=["Profile"])
