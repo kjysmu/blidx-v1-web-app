@@ -1,11 +1,14 @@
 import secrets
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.api.deps import use_request_user
+from app.api.deps import require_request_user, use_request_user
 from app.core.config import settings
+from app.core.security import create_linkedin_oauth_state
 from app.demo_store import demo_store
+from app.demo_store import utc_now
 from app.integrations.linkedin import LinkedInClient, linkedin_share_url
 
 router = APIRouter(dependencies=[Depends(use_request_user)])
@@ -39,6 +42,7 @@ def integration_status() -> dict:
             "connected": bool(linkedin_state.get("connected")),
             "profile": linkedin_state.get("profile"),
             "connected_at": linkedin_state.get("connected_at"),
+            "expires_at": linkedin_state.get("expires_at"),
             "redirect_uri": settings.LINKEDIN_REDIRECT_URI,
             "scopes": settings.LINKEDIN_SCOPES,
             "fallback_url": linkedin_share_url(),
@@ -55,8 +59,8 @@ def integration_status() -> dict:
     }
 
 
-@router.get("/linkedin/connect", response_model=LinkedInConnectResponse)
-def linkedin_connect() -> LinkedInConnectResponse:
+@router.post("/linkedin/connect", response_model=LinkedInConnectResponse)
+def linkedin_connect(user: dict = Depends(require_request_user)) -> LinkedInConnectResponse:
     linkedin = LinkedInClient()
     fallback_url = linkedin_share_url()
     if not linkedin.configured:
@@ -67,33 +71,22 @@ def linkedin_connect() -> LinkedInConnectResponse:
         )
 
     try:
+        nonce = secrets.token_urlsafe(32)
+        expires_at = utc_now() + timedelta(
+            minutes=settings.LINKEDIN_OAUTH_STATE_EXPIRE_MINUTES
+        )
+        demo_store.begin_linkedin_oauth(nonce, expires_at)
+        state = create_linkedin_oauth_state(user["id"], nonce)
         return LinkedInConnectResponse(
             configured=True,
-            authorization_url=linkedin.get_oauth_url(secrets.token_urlsafe(24)),
+            authorization_url=linkedin.get_oauth_url(state),
             fallback_url=fallback_url,
-            message="LinkedIn OAuth is ready to start.",
+            message="LinkedIn OAuth is ready for this Blidx account.",
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@router.get("/linkedin/callback")
-def linkedin_callback(code: str | None = None, error: str | None = None) -> dict:
-    if error:
-        raise HTTPException(status_code=400, detail=error)
-    if not code:
-        raise HTTPException(status_code=400, detail="Missing LinkedIn authorization code")
-
-    linkedin = LinkedInClient()
-    try:
-        token = linkedin.exchange_code_for_token(code)
-        profile = linkedin.get_userinfo(token["access_token"])
-        demo_store.store_linkedin_connection(token, profile)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail="LinkedIn token exchange failed") from exc
-
-    return {
-        "connected": True,
-        "expires_in": token.get("expires_in"),
-        "note": "LinkedIn token exchange succeeded and is stored for this staging demo.",
-    }
+@router.post("/linkedin/disconnect")
+def linkedin_disconnect(_: dict = Depends(require_request_user)) -> dict:
+    return demo_store.disconnect_linkedin()

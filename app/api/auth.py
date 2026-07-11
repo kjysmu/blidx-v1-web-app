@@ -3,7 +3,8 @@ from fastapi.responses import RedirectResponse
 
 from app.auth_store import auth_store
 from app.core.security import create_access_token, decode_access_token
-from app.demo_store import demo_store
+from app.core.security import decode_linkedin_oauth_state
+from app.demo_store import current_user_id, demo_store
 from app.schemas.auth import RegisterRequest, LoginRequest, AuthResponse
 from app.integrations.linkedin import LinkedInClient
 
@@ -61,14 +62,38 @@ def me(authorization: str | None = Header(default=None)) -> dict:
 
 
 @router.get("/linkedin/callback")
-def linkedin_callback(code: str | None = None, error: str | None = None):
+def linkedin_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+):
     if error:
-        return RedirectResponse(url=f"/?linkedin=error")
-    if not code:
-        return RedirectResponse(url="/?linkedin=missing_code")
+        return RedirectResponse(url="/?linkedin=cancelled", status_code=303)
+    if not code or not state:
+        return RedirectResponse(url="/?linkedin=invalid_callback", status_code=303)
 
-    linkedin = LinkedInClient()
-    token = linkedin.exchange_code_for_token(code)
-    profile = linkedin.get_userinfo(token["access_token"])
-    demo_store.store_linkedin_connection(token, profile)
-    return RedirectResponse(url="/?linkedin=connected")
+    oauth_state = decode_linkedin_oauth_state(state)
+    if not oauth_state:
+        return RedirectResponse(url="/?linkedin=invalid_state", status_code=303)
+    user = auth_store.get_user(oauth_state["user_id"])
+    if not user:
+        return RedirectResponse(url="/?linkedin=unknown_user", status_code=303)
+
+    demo_store.ensure_user_state(user)
+    previous_user = current_user_id.set(user["id"])
+    try:
+        if not demo_store.consume_linkedin_oauth(oauth_state["nonce"]):
+            return RedirectResponse(url="/?linkedin=expired_state", status_code=303)
+
+        linkedin = LinkedInClient()
+        token = linkedin.exchange_code_for_token(code)
+        access_token = token.get("access_token")
+        if not access_token:
+            return RedirectResponse(url="/?linkedin=token_error", status_code=303)
+        profile = linkedin.get_userinfo(access_token)
+        demo_store.store_linkedin_connection(token, profile)
+        return RedirectResponse(url="/?linkedin=connected", status_code=303)
+    except Exception:
+        return RedirectResponse(url="/?linkedin=failed", status_code=303)
+    finally:
+        current_user_id.reset(previous_user)

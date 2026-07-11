@@ -1,4 +1,6 @@
 import json
+import hashlib
+import hmac
 import re
 import threading
 import uuid
@@ -12,6 +14,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.database import SessionLocal
+from app.core.token_crypto import decrypt_token, encrypt_token
 from app.integrations.llm import ClaudeProvider
 from app.models.user import User
 from app.repositories.workspace_repository import workspace_repository
@@ -104,9 +107,10 @@ class DemoStore:
             },
             "linkedin": {
                 "connected": False,
-                "access_token": None,
+                "access_token_encrypted": None,
                 "profile": None,
                 "connected_at": None,
+                "expires_at": None,
             },
         }
 
@@ -610,15 +614,18 @@ class DemoStore:
                 return None
 
             linkedin = state.get("linkedin") or {}
-            access_token = linkedin.get("access_token")
+            access_token = self._linkedin_access_token(linkedin)
             if not access_token:
+                if self._linkedin_token_expired(linkedin):
+                    linkedin["connected"] = False
+                    self._write(state)
                 return {
                     "published": False,
                     "mode": "manual_fallback",
                     "fallback_url": "https://www.linkedin.com/feed/",
                     "message": (
-                        "LinkedIn is not connected yet. The draft can be copied and posted "
-                        "manually, then tracked here with the LinkedIn URL."
+                        "LinkedIn is not connected or the connection expired. Reconnect it, "
+                        "or copy the draft and post it manually."
                     ),
                     "post": deepcopy(post),
                 }
@@ -628,6 +635,17 @@ class DemoStore:
             try:
                 published = LinkedInClient().publish_post(access_token, post["content"])
             except Exception as exc:
+                if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 401:
+                    state["linkedin"] = {
+                        "connected": False,
+                        "access_token_encrypted": None,
+                        "refresh_token_encrypted": None,
+                        "profile": linkedin.get("profile"),
+                        "connected_at": linkedin.get("connected_at"),
+                        "expires_at": None,
+                        "last_error": "LinkedIn authorization expired or was revoked.",
+                    }
+                    self._write(state)
                 return {
                     "published": False,
                     "mode": "manual_fallback",
@@ -677,15 +695,49 @@ class DemoStore:
             self._write(state)
             return deepcopy(post)
 
+    def begin_linkedin_oauth(self, nonce: str, expires_at: datetime) -> None:
+        with self.lock:
+            state = self._read()
+            state["linkedin_oauth"] = {
+                "nonce_hash": hashlib.sha256(nonce.encode("utf-8")).hexdigest(),
+                "expires_at": expires_at.isoformat(),
+            }
+            self._write(state)
+
+    def consume_linkedin_oauth(self, nonce: str) -> bool:
+        with self.lock:
+            state = self._read()
+            pending = state.get("linkedin_oauth") or {}
+            expected = pending.get("nonce_hash") or ""
+            supplied = hashlib.sha256(nonce.encode("utf-8")).hexdigest()
+            try:
+                expires_at = datetime.fromisoformat(pending.get("expires_at") or "")
+            except ValueError:
+                expires_at = datetime.min.replace(tzinfo=timezone.utc)
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            valid = bool(expected) and hmac.compare_digest(expected, supplied) and expires_at > utc_now()
+            if valid or expires_at <= utc_now():
+                state.pop("linkedin_oauth", None)
+                self._write(state)
+            return valid
+
     def store_linkedin_connection(self, token: dict, profile: dict | None = None) -> dict:
         with self.lock:
             state = self._read()
+            now = utc_now()
+            try:
+                expires_in = max(0, int(token.get("expires_in") or 0))
+            except (TypeError, ValueError):
+                expires_in = 0
             state["linkedin"] = {
                 "connected": True,
-                "access_token": token.get("access_token"),
+                "access_token_encrypted": encrypt_token(token.get("access_token")),
+                "refresh_token_encrypted": encrypt_token(token.get("refresh_token")),
                 "profile": profile or {},
-                "connected_at": utc_now().isoformat(),
-                "expires_in": token.get("expires_in"),
+                "connected_at": now.isoformat(),
+                "expires_in": expires_in or None,
+                "expires_at": (now + timedelta(seconds=expires_in)).isoformat() if expires_in else None,
             }
             self._append_message(
                 state,
@@ -695,6 +747,44 @@ class DemoStore:
             )
             self._write(state)
             return self._public_state(state)["linkedin"]
+
+    def disconnect_linkedin(self) -> dict:
+        with self.lock:
+            state = self._read()
+            state["linkedin"] = {
+                "connected": False,
+                "access_token_encrypted": None,
+                "refresh_token_encrypted": None,
+                "profile": None,
+                "connected_at": None,
+                "expires_at": None,
+            }
+            state.pop("linkedin_oauth", None)
+            self._write(state)
+            return self._public_state(state)["linkedin"]
+
+    @staticmethod
+    def _linkedin_token_expired(linkedin: dict) -> bool:
+        expires_at = linkedin.get("expires_at")
+        if not expires_at:
+            return False
+        try:
+            parsed = datetime.fromisoformat(expires_at)
+        except (TypeError, ValueError):
+            return True
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed <= utc_now()
+
+    @staticmethod
+    def _linkedin_access_token(linkedin: dict) -> str | None:
+        if DemoStore._linkedin_token_expired(linkedin):
+            return None
+        encrypted = linkedin.get("access_token_encrypted")
+        if encrypted:
+            return decrypt_token(encrypted)
+        # Temporary compatibility for connections created before encrypted storage.
+        return linkedin.get("access_token")
 
     def save_post(self, post_id: str) -> dict | None:
         return self._set_status(post_id, "saved")
@@ -872,9 +962,10 @@ class DemoStore:
             "linkedin",
             {
                 "connected": False,
-                "access_token": None,
+                "access_token_encrypted": None,
                 "profile": None,
                 "connected_at": None,
+                "expires_at": None,
             },
         )
         return state
@@ -884,9 +975,11 @@ class DemoStore:
         public = deepcopy(state)
         linkedin = public.setdefault("linkedin", {})
         linkedin.pop("access_token", None)
-        linkedin["connected"] = bool(state.get("linkedin", {}).get("access_token")) or bool(
-            linkedin.get("connected")
-        )
+        linkedin.pop("access_token_encrypted", None)
+        linkedin.pop("refresh_token_encrypted", None)
+        public.pop("linkedin_oauth", None)
+        source_linkedin = state.get("linkedin", {})
+        linkedin["connected"] = bool(DemoStore._linkedin_access_token(source_linkedin))
         public["auth"] = {
             "authenticated": bool(current_user_id.get()),
             "user_id": current_user_id.get(),

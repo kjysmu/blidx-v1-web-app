@@ -1,4 +1,4 @@
-from fastapi import Header
+from fastapi import Depends, Header, HTTPException
 
 from app.auth_store import auth_store
 from app.core.security import decode_access_token
@@ -22,4 +22,10 @@ def use_request_user(authorization: str | None = Header(default=None)) -> dict |
     current_user_id.set(user["id"])
     demo_store.ensure_user_state(user)
     current_user_id.set(user["id"])
+    return user
+
+
+def require_request_user(user: dict | None = Depends(use_request_user)) -> dict:
+    if not user:
+        raise HTTPException(status_code=401, detail="Sign in to connect LinkedIn")
     return user

@@ -9,7 +9,7 @@ class LinkedInClient:
     authorization_url = "https://www.linkedin.com/oauth/v2/authorization"
     token_url = "https://www.linkedin.com/oauth/v2/accessToken"
     userinfo_url = "https://api.linkedin.com/v2/userinfo"
-    posts_url = "https://api.linkedin.com/v2/ugcPosts"
+    posts_url = "https://api.linkedin.com/rest/posts"
 
     @property
     def configured(self) -> bool:
@@ -68,14 +68,15 @@ class LinkedInClient:
 
         payload = {
             "author": f"urn:li:person:{author}",
-            "lifecycleState": "PUBLISHED",
-            "specificContent": {
-                "com.linkedin.ugc.ShareContent": {
-                    "shareCommentary": {"text": content},
-                    "shareMediaCategory": "NONE",
-                }
+            "commentary": content,
+            "visibility": "PUBLIC",
+            "distribution": {
+                "feedDistribution": "MAIN_FEED",
+                "targetEntities": [],
+                "thirdPartyDistributionChannels": [],
             },
-            "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": False,
         }
         with httpx.Client(timeout=20.0) as client:
             response = client.post(
@@ -84,6 +85,7 @@ class LinkedInClient:
                     "authorization": f"Bearer {access_token}",
                     "content-type": "application/json",
                     "x-restli-protocol-version": "2.0.0",
+                    "linkedin-version": settings.LINKEDIN_API_VERSION,
                 },
                 json=payload,
             )
@@ -91,6 +93,9 @@ class LinkedInClient:
             data = response.json() if response.content else {"status": "published"}
             if response.headers.get("x-restli-id"):
                 data["id"] = response.headers["x-restli-id"]
+            post_id = data.get("id")
+            if post_id and not data.get("url"):
+                data["url"] = f"https://www.linkedin.com/feed/update/{post_id}/"
             return data
 
 

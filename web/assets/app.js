@@ -1,7 +1,22 @@
 const app = document.querySelector("#app");
 
+const linkedinCallback = new URLSearchParams(window.location.search).get("linkedin");
+const linkedinCallbackMessages = {
+  connected: "LinkedIn connected to this Blidx account.",
+  cancelled: "LinkedIn connection was cancelled.",
+  invalid_callback: "LinkedIn returned an incomplete connection. Please try again.",
+  invalid_state: "LinkedIn connection could not be verified. Please start again from Settings.",
+  expired_state: "LinkedIn connection expired before completion. Please reconnect.",
+  unknown_user: "The Blidx account for this LinkedIn connection was not found.",
+  token_error: "LinkedIn did not return a usable connection token.",
+  failed: "LinkedIn connection failed. Please try again or use the manual posting fallback.",
+};
+if (linkedinCallback) {
+  window.history.replaceState({}, "", window.location.pathname);
+}
+
 const ui = {
-  tab: "chat",
+  tab: linkedinCallback ? "settings" : "chat",
   state: null,
   integrations: null,
   auth: JSON.parse(localStorage.getItem("blidx_auth") || "null"),
@@ -12,7 +27,7 @@ const ui = {
   selectedCategory: "insights",
   libraryFilter: "all",
   librarySearch: "",
-  notice: "",
+  notice: linkedinCallbackMessages[linkedinCallback] || "",
   modal: null,
   toast: "",
   toastAction: null,
@@ -1516,8 +1531,9 @@ function renderSettings() {
   const database = ui.integrations?.database;
   const linkedinBadge = linkedin?.connected ? "Connected" : linkedin?.configured ? "OAuth configured" : "Fallback ready";
   const databaseIsPostgres = database?.storage === "postgres";
+  const linkedinName = linkedin?.profile?.name || [linkedin?.profile?.given_name, linkedin?.profile?.family_name].filter(Boolean).join(" ");
   const linkedinDetail = linkedin?.connected
-    ? "Connected for this staging session"
+    ? `Connected to ${linkedinName || "your LinkedIn account"}`
     : linkedin?.configured
       ? "OAuth configured · redirect/app access still required"
       : "Not connected · manual fallback ready";
@@ -1532,7 +1548,7 @@ function renderSettings() {
           <div class="li-label">${escapeHtml(linkedinBadge)}</div>
           <div class="li-sub">${escapeHtml(linkedinDetail)}</div>
         </div>
-        ${linkedin?.connected ? '<button class="li-action disconnect" type="button">Connected</button>' : '<button class="li-action connect" type="button" id="connect-linkedin">Connect</button>'}
+        ${linkedin?.connected ? '<button class="li-action disconnect" type="button" id="disconnect-linkedin">Disconnect</button>' : '<button class="li-action connect" type="button" id="connect-linkedin">Connect</button>'}
       </div>
     </div>
     ${settingsSection("Notifications", [
@@ -1592,6 +1608,7 @@ function bindView() {
   document.querySelector("#profile-form")?.addEventListener("submit", saveProfile);
   document.querySelector("#reset-demo")?.addEventListener("click", resetDemo);
   document.querySelector("#connect-linkedin")?.addEventListener("click", connectLinkedIn);
+  document.querySelector("#disconnect-linkedin")?.addEventListener("click", disconnectLinkedIn);
   const chatGuide = document.querySelector("#chat-guide");
   if (chatGuide) chatGuide.addEventListener("toggle", () => { ui.chatGuideOpen = chatGuide.open; });
   document.querySelectorAll("[data-calendar-nav]").forEach((button) => {
@@ -2139,7 +2156,7 @@ async function trackLinkedInUrl(id) {
 
 async function connectLinkedIn() {
   try {
-    const result = await api("/api/integrations/linkedin/connect");
+    const result = await api("/api/integrations/linkedin/connect", { method: "POST" });
     if (result.authorization_url) {
       window.location.href = result.authorization_url;
       return;
@@ -2147,6 +2164,16 @@ async function connectLinkedIn() {
     showToast(result.message || "LinkedIn OAuth is not configured yet");
   } catch (error) {
     showToast(error.message);
+  }
+}
+
+async function disconnectLinkedIn() {
+  try {
+    await api("/api/integrations/linkedin/disconnect", { method: "POST" });
+    await refresh();
+    showToast("LinkedIn disconnected from this Blidx account");
+  } catch (error) {
+    showToast(error.message || "Could not disconnect LinkedIn");
   }
 }
 

@@ -42,9 +42,15 @@ services:
       - key: LINKEDIN_CLIENT_SECRET
         sync: false
       - key: LINKEDIN_REDIRECT_URI
-        sync: false
+        value: https://blidx-v1-web-app.onrender.com/auth/linkedin/callback
       - key: LINKEDIN_SCOPES
         value: openid profile email w_member_social
+      - key: LINKEDIN_API_VERSION
+        value: "202605"
+      - key: LINKEDIN_TOKEN_ENCRYPTION_KEY
+        generateValue: true
+      - key: LINKEDIN_OAUTH_STATE_EXPIRE_MINUTES
+        value: "10"
       - key: ADMIN_USERNAME
         sync: false
       - key: ADMIN_PASSWORD

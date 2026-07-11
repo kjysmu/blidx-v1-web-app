@@ -113,9 +113,10 @@ Postgres workspace tables. Local development can still use JSON files by setting
 - Claude / Anthropic: supported through `ANTHROPIC_API_KEY`. When the key is
   missing or the API call fails, Mira falls back to the deterministic demo
   generator so the app stays usable.
-- LinkedIn: OAuth URL generation and token exchange helpers are implemented.
-  The tester-safe fallback is also available in the UI: copy the draft and open
-  LinkedIn for manual posting.
+- LinkedIn: signed one-time OAuth state binds each connection to the Blidx user
+  who started it. Tokens are encrypted at rest, disconnect/expiry states are
+  supported, and text publishing uses LinkedIn's versioned Posts API. The
+  tester-safe copy/open fallback remains available when OAuth or publishing fails.
 - Admin: `/admin` is available behind HTTP Basic auth. Set `ADMIN_USERNAME` and
   `ADMIN_PASSWORD` in the environment before enabling it on staging.
 - PayloadCMS: reviewed for V1. It is a strong Next.js-native CMS/admin option,
@@ -132,6 +133,7 @@ ANTHROPIC_API_KEY
 LINKEDIN_CLIENT_ID
 LINKEDIN_CLIENT_SECRET
 LINKEDIN_REDIRECT_URI
+LINKEDIN_TOKEN_ENCRYPTION_KEY
 ADMIN_USERNAME
 ADMIN_PASSWORD
 ```

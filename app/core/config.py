@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     LINKEDIN_CLIENT_SECRET: str | None = None
     LINKEDIN_REDIRECT_URI: str | None = None
     LINKEDIN_SCOPES: str = "openid profile email w_member_social"
+    LINKEDIN_API_VERSION: str = "202605"
+    LINKEDIN_TOKEN_ENCRYPTION_KEY: str | None = None
+    LINKEDIN_OAUTH_STATE_EXPIRE_MINUTES: int = 10
 
     SEARCH_API_KEY: str | None = None
 
