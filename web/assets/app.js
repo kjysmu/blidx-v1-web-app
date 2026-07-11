@@ -1440,28 +1440,6 @@ function renderQA() {
   </section>`;
 }
 
-function productReadinessPanel() {
-  const hasProfile = Boolean(ui.state.profile?.company_name && ui.state.profile?.company_description);
-  const hasMemory = (ui.state.content_bank || []).length > 0;
-  const hasDraft = (ui.state.posts || []).some((post) => post.status !== "deleted");
-  const linkedin = ui.integrations?.linkedin;
-  const checks = [
-    ["Authentication", ui.state.auth?.authenticated || ui.demoMode, ui.state.auth?.authenticated ? "Signed in workspace" : "Public demo mode"],
-    ["Onboarding", ui.state.onboarding_completed, ui.state.onboarding_completed ? "Completed" : "Needs setup"],
-    ["Profile context", hasProfile, hasProfile ? "Company context saved" : "Add company description"],
-    ["Content Bank", hasMemory, hasMemory ? `${ui.state.content_bank.length} entries` : "Add first memory"],
-    ["Draft workflow", hasDraft, hasDraft ? "Library has drafts/posts" : "Create first draft"],
-    ["LinkedIn", linkedin?.connected || linkedin?.configured, linkedin?.connected ? "Connected" : linkedin?.configured ? "OAuth configured, needs redirect/app access" : "Manual fallback only"],
-  ];
-  const readyCount = checks.filter(([, done]) => done).length;
-  return `<div class="card readiness-card">
-    <div class="card-head"><div><h3>MVP readiness checklist</h3><p class="muted small">This is the honest staging status testers should expect.</p></div><span class="badge ${readyCount >= 5 ? "published" : "draft"}">${readyCount}/${checks.length}</span></div>
-    <div class="readiness-grid">
-      ${checks.map(([label, done, detail]) => `<div class="readiness-item ${done ? "done" : ""}"><strong>${done ? "✓" : "○"} ${escapeHtml(label)}</strong><span>${escapeHtml(detail)}</span></div>`).join("")}
-    </div>
-  </div>`;
-}
-
 function settingsSection(title, rows) {
   return `<div class="settings-section">
     <div class="settings-header">${escapeHtml(title)}</div>
@@ -1525,19 +1503,15 @@ function settingsProfileForm(p) {
 
 function renderSettings() {
   const p = ui.state.profile;
-  const anthropic = ui.integrations?.anthropic;
   const linkedin = ui.integrations?.linkedin;
-  const payloadcms = ui.integrations?.payloadcms;
-  const database = ui.integrations?.database;
-  const linkedinBadge = linkedin?.connected ? "Connected" : linkedin?.configured ? "OAuth configured" : "Fallback ready";
-  const databaseIsPostgres = database?.storage === "postgres";
+  const linkedinBadge = linkedin?.connected ? "Connected" : linkedin?.configured ? "Ready to connect" : "Manual posting ready";
   const linkedinName = linkedin?.profile?.name || [linkedin?.profile?.given_name, linkedin?.profile?.family_name].filter(Boolean).join(" ");
   const linkedinDetail = linkedin?.connected
     ? `Connected to ${linkedinName || "your LinkedIn account"}`
     : linkedin?.configured
-      ? "OAuth configured · redirect/app access still required"
-      : "Not connected · manual fallback ready";
-  return `<section class="page settings-page" data-testid="settings-page"><div class="eyebrow">Settings</div><h1>Settings</h1><p class="lead">Your profile, LinkedIn connection, notification preferences, and staging status live here.</p>
+      ? "Connect once to publish approved posts from Blidx"
+      : "Copy a draft and open LinkedIn when you are ready to post";
+  return `<section class="page settings-page" data-testid="settings-page"><div class="eyebrow">Settings</div><h1>Settings</h1><p class="lead">Manage the profile Mira writes from, your LinkedIn connection, and account preferences.</p>
     ${ui.notice ? `<div class="notice">${escapeHtml(ui.notice)}</div>` : ""}
     ${settingsProfileForm(p)}
     <div class="settings-section">
@@ -1562,25 +1536,19 @@ function renderSettings() {
     <div class="settings-section">
       <div class="settings-header">Account</div>
       <div class="settings-group">
-        ${settingsRow("🔒", "gray", "Change password", "Password reset is not enabled in staging")}
+        ${settingsRow("🔒", "gray", "Change password", "Password reset is not available yet")}
         <div class="settings-row settings-action-row">
           <div class="settings-row-icon red">🗑</div>
           <div class="settings-row-body">
             <div class="settings-row-label">Reset workspace data</div>
-            <div class="settings-row-value">Clears local/demo memories, drafts, and chat state</div>
+            <div class="settings-row-value">Clears this workspace's memories, drafts, and chat history</div>
           </div>
           <button type="button" class="button danger settings-inline-button" id="reset-demo">Reset</button>
         </div>
       </div>
     </div>
-    <div class="settings-system">
-      <div class="eyebrow">System / staging</div>
-      ${productReadinessPanel()}
-      <div class="grid">
-        <div class="card"><div class="card-head"><h3>AI generation</h3><span class="badge ${anthropic?.configured ? "published" : "draft"}">${anthropic?.configured ? "Claude ready" : "Local fallback"}</span></div><p class="muted">${anthropic?.configured ? `Mira drafts use ${escapeHtml(anthropic.model)} with profile, writing samples, voice controls, and Content Bank context.` : "Add ANTHROPIC_API_KEY in Render to enable live Claude generation. The local fallback still uses your CTA style and avoids generic repeated templates."}</p></div>
-        <div class="card"><div class="card-head"><h3>Database storage</h3><span class="badge ${databaseIsPostgres ? "published" : "draft"}">${databaseIsPostgres ? "Postgres active" : "File storage"}</span></div><p class="muted">${databaseIsPostgres ? "Signup, login, and workspace state are using the configured Render Postgres database." : "This staging app is still using MVP file-backed storage. Set USE_DATABASE_STORAGE=true and DATABASE_URL in Render to switch to Postgres."}</p></div>
-      </div>
-      <div class="card" style="margin-top:16px"><div class="card-head"><h3>PayloadCMS review</h3><span class="badge draft">${escapeHtml(payloadcms?.recommendation || "defer")}</span></div><p class="muted">${escapeHtml(payloadcms?.reason || "PayloadCMS review pending.")}</p></div>
+    <div class="settings-section">
+      <div class="settings-header">Help & feedback</div>
       <div class="settings-group" style="margin-top:16px">
         <button class="settings-row settings-row-link" data-action="qa-status">
           <span class="settings-row-icon gray">✓</span>
