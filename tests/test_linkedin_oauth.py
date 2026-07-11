@@ -38,6 +38,7 @@ def configure_linkedin(monkeypatch) -> None:
         "LINKEDIN_REDIRECT_URI",
         "https://app.blidx.test/auth/linkedin/callback",
     )
+    monkeypatch.setattr(settings, "LINKEDIN_SCOPES", "openid profile w_member_social")
     monkeypatch.setattr(settings, "LINKEDIN_TOKEN_ENCRYPTION_KEY", "test-encryption-key")
 
 
@@ -67,6 +68,9 @@ def test_linkedin_oauth_is_one_time_encrypted_and_account_bound(monkeypatch):
     )
     assert connect.status_code == 200
     authorization_url = connect.json()["authorization_url"]
+    assert parse_qs(urlparse(authorization_url).query)["scope"] == [
+        "openid profile w_member_social"
+    ]
     oauth_token = parse_qs(urlparse(authorization_url).query)["state"][0]
     oauth_state = decode_linkedin_oauth_state(oauth_token)
     assert oauth_state["user_id"] == first["user_id"]
@@ -162,6 +166,51 @@ def test_linkedin_callback_rejects_unsigned_state(monkeypatch):
     )
     assert response.status_code == 303
     assert response.headers["location"] == "/?linkedin=invalid_state"
+
+
+def test_linkedin_callback_reports_scope_error_and_consumes_state(monkeypatch):
+    configure_linkedin(monkeypatch)
+    _, headers = register("LinkedIn Scope Error")
+    connect = client.post(
+        "/api/integrations/linkedin/connect",
+        headers=headers,
+    )
+    authorization_url = connect.json()["authorization_url"]
+    oauth_token = parse_qs(urlparse(authorization_url).query)["state"][0]
+
+    response = client.get(
+        "/auth/linkedin/callback",
+        params={"error": "invalid_scope_error", "state": oauth_token},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/?linkedin=invalid_scope"
+
+    replay = client.get(
+        "/auth/linkedin/callback",
+        params={"error": "invalid_scope_error", "state": oauth_token},
+        follow_redirects=False,
+    )
+    assert replay.headers["location"] == "/?linkedin=expired_state"
+
+
+def test_linkedin_callback_error_requires_signed_state(monkeypatch):
+    configure_linkedin(monkeypatch)
+
+    missing = client.get(
+        "/auth/linkedin/callback",
+        params={"error": "invalid_scope_error"},
+        follow_redirects=False,
+    )
+    invalid = client.get(
+        "/auth/linkedin/callback",
+        params={"error": "invalid_scope_error", "state": "not-signed"},
+        follow_redirects=False,
+    )
+
+    assert missing.headers["location"] == "/?linkedin=invalid_callback"
+    assert invalid.headers["location"] == "/?linkedin=invalid_state"
 
 
 def test_expired_linkedin_token_uses_manual_fallback(monkeypatch):

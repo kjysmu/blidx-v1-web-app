@@ -11,6 +11,16 @@ from app.integrations.linkedin import LinkedInClient
 router = APIRouter()
 
 
+def linkedin_error_status(error: str) -> str:
+    if error in {"user_cancelled_login", "user_cancelled_authorize", "access_denied"}:
+        return "cancelled"
+    if error in {"invalid_scope", "invalid_scope_error", "unauthorized_scope_error"}:
+        return "invalid_scope"
+    if error in {"invalid_redirect_uri", "redirect_uri_mismatch"}:
+        return "invalid_redirect"
+    return "failed"
+
+
 @router.post("/register", response_model=AuthResponse)
 def register(payload: RegisterRequest):
     try:
@@ -67,9 +77,7 @@ def linkedin_callback(
     state: str | None = None,
     error: str | None = None,
 ):
-    if error:
-        return RedirectResponse(url="/?linkedin=cancelled", status_code=303)
-    if not code or not state:
+    if not state:
         return RedirectResponse(url="/?linkedin=invalid_callback", status_code=303)
 
     oauth_state = decode_linkedin_oauth_state(state)
@@ -84,6 +92,12 @@ def linkedin_callback(
     try:
         if not demo_store.consume_linkedin_oauth(oauth_state["nonce"]):
             return RedirectResponse(url="/?linkedin=expired_state", status_code=303)
+
+        if error:
+            status = linkedin_error_status(error)
+            return RedirectResponse(url=f"/?linkedin={status}", status_code=303)
+        if not code:
+            return RedirectResponse(url="/?linkedin=invalid_callback", status_code=303)
 
         linkedin = LinkedInClient()
         token = linkedin.exchange_code_for_token(code)

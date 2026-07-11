@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     LINKEDIN_CLIENT_ID: str | None = None
     LINKEDIN_CLIENT_SECRET: str | None = None
     LINKEDIN_REDIRECT_URI: str | None = None
-    LINKEDIN_SCOPES: str = "openid profile email w_member_social"
+    LINKEDIN_SCOPES: str = "openid profile w_member_social"
     LINKEDIN_API_VERSION: str = "202605"
     LINKEDIN_TOKEN_ENCRYPTION_KEY: str | None = None
     LINKEDIN_OAUTH_STATE_EXPIRE_MINUTES: int = 10
@@ -68,6 +68,12 @@ def production_configuration_errors(config: Settings = settings) -> list[str]:
     if any(linkedin_values) and not all(linkedin_values):
         errors.append("LinkedIn client ID and secret must be configured together")
     if all(linkedin_values):
+        linkedin_scopes = set(config.LINKEDIN_SCOPES.split())
+        required_scopes = {"openid", "profile", "w_member_social"}
+        if not required_scopes.issubset(linkedin_scopes):
+            errors.append(
+                "LINKEDIN_SCOPES must include openid, profile, and w_member_social"
+            )
         if (
             not config.LINKEDIN_REDIRECT_URI
             or not config.LINKEDIN_REDIRECT_URI.startswith("https://")

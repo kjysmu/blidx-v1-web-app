@@ -4,6 +4,8 @@ const linkedinCallback = new URLSearchParams(window.location.search).get("linked
 const linkedinCallbackMessages = {
   connected: "LinkedIn connected to this Blidx account.",
   cancelled: "LinkedIn connection was cancelled.",
+  invalid_scope: "LinkedIn rejected the requested permissions. Enable Sign In with LinkedIn using OpenID Connect and Share on LinkedIn for this Developer app, then try again.",
+  invalid_redirect: "LinkedIn rejected the callback URL. Add the exact Blidx callback URL in the LinkedIn Developer app, then try again.",
   invalid_callback: "LinkedIn returned an incomplete connection. Please try again.",
   invalid_state: "LinkedIn connection could not be verified. Please start again from Settings.",
   expired_state: "LinkedIn connection expired before completion. Please reconnect.",

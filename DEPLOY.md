@@ -41,6 +41,9 @@ connection to reconnect.
 3. **LinkedIn app config** — add this exact staging callback to the LinkedIn
    app's authorized redirect URLs:
    `https://blidx-v1-web-app.onrender.com/auth/linkedin/callback`.
+   Enable both **Sign In with LinkedIn using OpenID Connect** (for `openid` and
+   `profile`) and **Share on LinkedIn** (for `w_member_social`) on the app's
+   Products tab.
    `app.blidx.com` should only replace it after DNS routes that hostname to the
    service. Until one exact callback matches, the manual fallback still works.
 

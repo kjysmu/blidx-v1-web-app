@@ -44,7 +44,7 @@ services:
       - key: LINKEDIN_REDIRECT_URI
         value: https://blidx-v1-web-app.onrender.com/auth/linkedin/callback
       - key: LINKEDIN_SCOPES
-        value: openid profile email w_member_social
+        value: openid profile w_member_social
       - key: LINKEDIN_API_VERSION
         value: "202605"
       - key: LINKEDIN_TOKEN_ENCRYPTION_KEY

@@ -79,3 +79,11 @@ def test_production_configuration_requires_separate_encryption_keys():
     assert "LINKEDIN_TOKEN_ENCRYPTION_KEY must differ from JWT_SECRET_KEY" in (
         production_configuration_errors(unsafe)
     )
+
+
+def test_production_configuration_requires_linkedin_identity_and_posting_scopes():
+    unsafe = production_settings(LINKEDIN_SCOPES="openid profile")
+
+    assert "LINKEDIN_SCOPES must include openid, profile, and w_member_social" in (
+        production_configuration_errors(unsafe)
+    )
