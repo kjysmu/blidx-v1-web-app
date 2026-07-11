@@ -2598,11 +2598,27 @@ class DemoStore:
         score, label, strengths, risks = DemoStore._strategy_score(topic, latest, audience)
         best_angle = DemoStore._best_strategy_angle(topic, latest)
         missing_detail = DemoStore._missing_strategy_detail(topic, latest)
-        angles = DemoStore._remember_angle_options(state, topic, latest)
+        requested_count = DemoStore._requested_strategy_count(content)
+        angles = DemoStore._remember_angle_options(state, topic, latest)[
+            :requested_count
+        ]
         angle_lines = "\n\n".join(
             f"{index}/ {angle['title']}: {angle['detail']}"
             for index, angle in enumerate(angles, start=1)
         )
+
+        if DemoStore._wants_brief_strategy(content):
+            intro = (
+                "I'd use this angle:"
+                if requested_count == 1
+                else f"Here are {requested_count} tight directions:"
+            )
+            ask = (
+                "Want me to draft it?"
+                if requested_count == 1
+                else "Pick one and I'll draft it."
+            )
+            return f"{intro}\n\n{angle_lines}\n\n{ask}"
 
         strengths = DemoStore._sentence_case(strengths)
         risks = DemoStore._sentence_case(risks)
@@ -2642,6 +2658,22 @@ class DemoStore:
             f"{angle_lines}\n\n"
             f"{ask}"
         )
+
+    @staticmethod
+    def _requested_strategy_count(content: str) -> int:
+        match = re.search(
+            r"\b(one|two|three|1|2|3)\b(?:\s+\w+){0,3}\s+"
+            r"(?:angle|angles|idea|ideas)\b",
+            content.lower(),
+        )
+        if not match:
+            return 3
+        return {"one": 1, "1": 1, "two": 2, "2": 2}.get(match.group(1), 3)
+
+    @staticmethod
+    def _wants_brief_strategy(content: str) -> bool:
+        lowered = content.lower()
+        return any(word in lowered for word in ("short", "brief", "concise", "quick"))
 
     @staticmethod
     def _wants_content_strategy(content: str) -> bool:

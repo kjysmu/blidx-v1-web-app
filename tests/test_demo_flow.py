@@ -454,6 +454,31 @@ def test_mira_saves_memory_then_guides_angle_choice():
     client.post("/api/reset")
 
 
+def test_mira_honors_one_short_angle_request():
+    client.post("/api/reset")
+    client.post(
+        "/api/chat/message",
+        json={
+            "message": "This week I learned that a clean deployment test is really a test of trust, not only code.",
+        },
+    )
+
+    response = client.post(
+        "/api/chat/message",
+        json={"message": "Give me one short content angle from my latest memory."},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["actions"] == ["reply"]
+    assert "1/ " in payload["reply"]
+    assert "2/ " not in payload["reply"]
+    assert "3/ " not in payload["reply"]
+    assert len(payload["reply"]) < 500
+
+    client.post("/api/reset")
+
+
 def test_selected_angle_controls_draft_framework():
     client.post("/api/reset")
     client.post(
