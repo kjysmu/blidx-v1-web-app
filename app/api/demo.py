@@ -1,10 +1,11 @@
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.deps import use_request_user
 from app.demo_store import demo_store
+from app.quality_benchmarks import BENCHMARK_SCENARIOS
 
 router = APIRouter(dependencies=[Depends(use_request_user)])
 
@@ -65,6 +66,11 @@ class ChatPayload(BaseModel):
 
 class LinkedInTrackPayload(BaseModel):
     url: str | None = None
+
+
+class DraftFeedbackPayload(BaseModel):
+    sentiment: Literal["sounds_like_me", "needs_work"]
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class OnboardingPayload(BaseModel):
@@ -150,6 +156,28 @@ def use_draft_variant(draft_id: str, payload: VariantPayload) -> dict[str, Any]:
     if post is None:
         raise HTTPException(status_code=404, detail="Draft variant not found")
     return post
+
+
+@router.post("/drafts/{draft_id}/feedback")
+def record_draft_feedback(draft_id: str, payload: DraftFeedbackPayload) -> dict[str, Any]:
+    feedback = demo_store.record_draft_feedback(
+        draft_id,
+        payload.sentiment,
+        payload.reason,
+    )
+    if feedback is None:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return feedback
+
+
+@router.get("/quality/report")
+def quality_report() -> dict[str, Any]:
+    return demo_store.snapshot()["quality_report"]
+
+
+@router.get("/quality/benchmarks")
+def quality_benchmarks() -> dict[str, Any]:
+    return {"scenarios": BENCHMARK_SCENARIOS, "count": len(BENCHMARK_SCENARIOS)}
 
 
 @router.post("/drafts/{draft_id}/approve")

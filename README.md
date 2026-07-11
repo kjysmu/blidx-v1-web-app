@@ -74,6 +74,16 @@ python -m playwright install chromium
 pytest tests/test_e2e_browser.py
 ```
 
+For a paid, manual quality comparison between Mira and a plain-Claude baseline:
+
+```bash
+python scripts/run_quality_benchmark.py --list
+python scripts/run_quality_benchmark.py --limit 1
+```
+
+The full catalog contains five founder-content scenarios. Each executed scenario
+makes two Anthropic calls, so it is never run automatically during tests or deploys.
+
 ## API routes
 
 ```txt

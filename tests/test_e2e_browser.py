@@ -147,6 +147,8 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     draft_modal = page.locator('[data-testid="draft-review-modal"]')
     draft_modal.wait_for()
     draft_modal.get_by_text("Draft workspace").wait_for()
+    page.locator('[data-testid="voice-match"]').click()
+    page.get_by_text("Mira saved this voice match").wait_for()
     page.locator("#close-draft-review").click()
 
     page.locator('[data-testid="linkedin-handoff"]').first.click()

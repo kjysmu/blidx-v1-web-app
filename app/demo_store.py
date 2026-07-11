@@ -15,6 +15,7 @@ from app.core.database import SessionLocal
 from app.integrations.llm import ClaudeProvider
 from app.models.user import User
 from app.repositories.workspace_repository import workspace_repository
+from app.services.draft_quality_service import DraftQualityService
 
 
 class CurrentUserContext:
@@ -399,6 +400,7 @@ class DemoStore:
             if post is None:
                 return None
 
+            previous_version = post.get("version", 1)
             content = self._generate_ai_revision(state, post, instructions)
             if not content:
                 content = post["content"]
@@ -431,6 +433,14 @@ class DemoStore:
             post["version"] += 1
             post["status"] = "pending"
             post["updated_at"] = utc_now().isoformat()
+            self._record_draft_feedback(
+                state,
+                post,
+                event="edit",
+                reason=instructions,
+                metadata={"from_version": previous_version, "to_version": post["version"]},
+            )
+            self._record_signal(state, f"Edit preference: {instructions[:140]}")
             self._write(state)
             return deepcopy(post)
 
@@ -460,6 +470,13 @@ class DemoStore:
             post["status"] = "pending"
             post["selected_variant_id"] = variant_id
             post["updated_at"] = utc_now().isoformat()
+            self._record_draft_feedback(
+                state,
+                post,
+                event="variant_selected",
+                reason=variant.get("label") or variant_id,
+                metadata={"variant_id": variant_id},
+            )
             self._append_message(
                 state,
                 "mira",
@@ -499,6 +516,13 @@ class DemoStore:
             self._record_signal(
                 state,
                 f"Draft {post['status']}: {(post.get('title') or '')[:80]}",
+            )
+            self._record_draft_feedback(
+                state,
+                post,
+                event="approved",
+                reason=post.get("schedule_label"),
+                metadata={"status": post["status"]},
             )
             if post["status"] == "published":
                 self._celebrate_milestones(state, post)
@@ -703,6 +727,13 @@ class DemoStore:
             post["updated_at"] = utc_now().isoformat()
             label = "skipped" if status == "deleted" else status
             self._record_signal(state, f"Draft {label}: {(post.get('title') or '')[:80]}")
+            if status == "deleted":
+                self._record_draft_feedback(
+                    state,
+                    post,
+                    event="rejected",
+                    reason="Skipped from draft review",
+                )
             self._write(state)
             return deepcopy(post)
 
@@ -798,6 +829,7 @@ class DemoStore:
         state.setdefault("content_bank", [])
         state.setdefault("posts", [])
         state.setdefault("conversation_signals", [])
+        state.setdefault("draft_feedback", [])
         profile = state.setdefault("profile", {})
         profile.setdefault("writing_style", "")
         profile.setdefault("writing_samples", [])
@@ -850,6 +882,7 @@ class DemoStore:
             "user_id": current_user_id.get(),
         }
         public["proactive_brief"] = DemoStore._proactive_brief(state)
+        public["quality_report"] = DraftQualityService.summarize(state)
         return public
 
     @staticmethod
@@ -1345,6 +1378,7 @@ class DemoStore:
         post = {
             "id": str(uuid.uuid4()),
             "title": title,
+            "topic": topic,
             "content": content[:3000],
             "status": "pending",
             "source": source,
@@ -1504,13 +1538,21 @@ class DemoStore:
         ]
         score = sum(1 for check in checks if check["passed"])
         needs = [check["label"] for check in checks if not check["passed"]]
-        return {
+        review = {
             "score": score,
             "max_score": len(checks),
             "label": f"Draft readiness: {score}/{len(checks)}",
             "needs": needs,
             "checks": checks,
         }
+        review.update(
+            DraftQualityService.evaluate(
+                state,
+                post,
+                robotic_phrases=DemoStore._robotic_phrases(),
+            )
+        )
+        return review
 
     @staticmethod
     def _draft_variants(state: dict, topic: str, main_content: str) -> list[dict]:
@@ -2061,6 +2103,8 @@ class DemoStore:
                     if recent_openings
                     else "This is the founder's first draft. Set a strong, natural opening."
                 ),
+                "LEARNED DRAFT FEEDBACK\n"
+                + DraftQualityService.feedback_context(state),
                 "SOUND HUMAN\n"
                 "Write the way a sharp founder actually writes on LinkedIn, not the way AI writes:\n"
                 "- Commit to ONE approach that fits this specific topic (a scene, an opinion, a question, a "
@@ -2084,6 +2128,56 @@ class DemoStore:
         turns give different lines, so Mira never sounds like a template."""
         digest = zlib.crc32("|".join(str(seed) for seed in seeds).encode())
         return options[digest % len(options)]
+
+    def record_draft_feedback(
+        self,
+        post_id: str,
+        sentiment: str,
+        reason: str | None = None,
+    ) -> dict | None:
+        with self.lock:
+            state = self._read()
+            post = self._find_post(state, post_id)
+            if post is None:
+                return None
+            event = self._record_draft_feedback(
+                state,
+                post,
+                event="voice_rating",
+                reason=reason,
+                sentiment=sentiment,
+            )
+            phrase = "matched the founder's voice" if sentiment == "sounds_like_me" else "needs a different voice"
+            self._record_signal(state, f"Voice feedback: draft {phrase}. {(reason or '')[:100]}".strip())
+            self._write(state)
+            return deepcopy(event)
+
+    @staticmethod
+    def _record_draft_feedback(
+        state: dict,
+        post: dict,
+        *,
+        event: str,
+        reason: str | None = None,
+        sentiment: str | None = None,
+        metadata: dict | None = None,
+    ) -> dict:
+        entry = {
+            "id": str(uuid.uuid4()),
+            "post_id": post.get("id"),
+            "topic": post.get("topic") or post.get("title"),
+            "event": event,
+            "reason": (reason or "").strip() or None,
+            "sentiment": sentiment,
+            "version": post.get("version"),
+            "readiness_percent": (post.get("quality_review") or {}).get("readiness_percent"),
+            "created_at": utc_now().isoformat(),
+            "metadata": metadata or {},
+        }
+        log = state.setdefault("draft_feedback", [])
+        log.append(entry)
+        state["draft_feedback"] = log[-200:]
+        return entry
 
     @staticmethod
     def _record_signal(state: dict, signal: str) -> None:

@@ -789,6 +789,7 @@ function draftReviewModal() {
       <div class="draft-review-body">
         <div class="draft-content markdown">${renderMarkdown(post.content || "")}</div>
         ${qualityReviewPanel(post)}
+        ${voiceFeedbackPanel(post)}
         ${variantRail(post)}
       </div>
       <div class="draft-actions draft-review-actions">
@@ -807,15 +808,29 @@ function qualityReviewPanel(post, compact = false) {
   const review = post.quality_review || buildClientQualityReview(post);
   const checks = review.checks || [];
   const needs = review.needs || checks.filter((check) => !check.passed).map((check) => check.label);
+  const dimensions = review.dimensions || [];
   return `<div class="quality-review ${compact ? "compact" : ""}">
     <div class="quality-head">
-      <strong>${escapeHtml(review.label || `Draft readiness: ${review.score || 0}/${review.max_score || checks.length || 5}`)}</strong>
+      <strong>${review.readiness_percent == null ? escapeHtml(review.label || `Draft readiness: ${review.score || 0}/${review.max_score || checks.length || 5}`) : `Mira quality: ${review.readiness_percent}%`}</strong>
       <span class="badge ${needs.length ? "draft" : "published"}">${needs.length ? "Needs review" : "Ready"}</span>
     </div>
+    ${!compact && dimensions.length ? `<div class="quality-dimensions">${dimensions.map((item) => `<div><span>${escapeHtml(item.label)}</span><strong>${item.score}/${item.max_score}</strong><small>${escapeHtml(item.detail || "")}</small></div>`).join("")}</div>` : ""}
     <div class="quality-checks">
       ${checks.map((check) => `<div class="quality-check ${check.passed ? "passed" : "missing"}"><span>${check.passed ? "✓" : "○"}</span><strong>${escapeHtml(check.label)}</strong>${compact ? "" : `<small>${escapeHtml(check.detail || "")}</small>`}</div>`).join("")}
     </div>
     ${needs.length ? `<div class="quality-needs">Needs improvement: ${escapeHtml(needs.join(", "))}</div>` : `<div class="quality-needs ready">Looks ready for human review.</div>`}
+  </div>`;
+}
+
+function voiceFeedbackPanel(post) {
+  const feedback = (ui.state.draft_feedback || []).filter((item) => item.post_id === post.id && item.event === "voice_rating").at(-1);
+  const selected = feedback?.sentiment;
+  return `<div class="voice-feedback">
+    <div><strong>Does this sound like you?</strong><span>Your answer teaches Mira what to keep or change next time.</span></div>
+    <div class="voice-feedback-actions">
+      <button class="button ${selected === "sounds_like_me" ? "" : "secondary"}" data-testid="voice-match" data-draft-feedback="sounds_like_me" data-id="${post.id}">Sounds like me</button>
+      <button class="button ${selected === "needs_work" ? "" : "ghost"}" data-testid="voice-needs-work" data-draft-feedback="needs_work" data-id="${post.id}">Needs work</button>
+    </div>
   </div>`;
 }
 
@@ -1329,6 +1344,7 @@ function renderQA() {
   const readyCount = checks.filter((item) => item.done).length;
   const posts = ui.state.posts || [];
   const bank = ui.state.content_bank || [];
+  const quality = ui.state.quality_report || {};
   const mockupChecks = [
     ["Flow 1 · Onboarding", "Partly aligned", "Questionnaire exists; payment and pre-signup localStorage handoff are still deferred."],
     ["Flow 2 · Draft", "Partly aligned", "Mira chat, angle choice, draft card, edit/save/approve exist; upload document and SSE activity stream are still deferred."],
@@ -1341,7 +1357,7 @@ function renderQA() {
   const knownLimitations = [
     "LinkedIn auto-posting still depends on LinkedIn Developer redirect/app access. Manual fallback is the reliable test path for now.",
     "Auth is staging-level. Password reset, email verification, account recovery, and production security hardening are not complete yet.",
-    "Mira has stronger strategy and framework behavior now, but still needs deeper voice learning from more writing samples.",
+    "Mira now records voice ratings and draft decisions, but quality confidence grows only after testers provide real writing samples and feedback.",
     "The UI is more responsive and the navigation now matches the handoff structure, but exact screen-by-screen visual parity is still in progress.",
   ];
   return `<section class="page qa-page" data-testid="qa-page">
@@ -1360,6 +1376,12 @@ function renderQA() {
         <button class="button ghost" data-tab="library">Review Library</button>
       </div>
     </div>
+    <div class="stats-grid quality-summary-grid">
+      <div class="stat-card card"><span class="eyebrow">Average Mira quality</span><div class="metric">${quality.average_readiness == null ? "—" : `${quality.average_readiness}%`}</div><p class="muted">${quality.drafts_evaluated || 0} drafts evaluated</p></div>
+      <div class="stat-card card"><span class="eyebrow">Voice match</span><div class="metric">${quality.voice_match_percent == null ? "—" : `${quality.voice_match_percent}%`}</div><p class="muted">${quality.voice_ratings || 0} founder ratings</p></div>
+      <div class="stat-card card"><span class="eyebrow">Revisions</span><div class="metric">${quality.revision_count || 0}</div><p class="muted">Instructions Mira can learn from</p></div>
+      <div class="stat-card card"><span class="eyebrow">Decisions</span><div class="metric">${(quality.approval_count || 0) + (quality.rejection_count || 0)}</div><p class="muted">${quality.approval_count || 0} approved · ${quality.rejection_count || 0} rejected</p></div>
+    </div>
     <div class="qa-script card">
       <div class="card-head"><h3>Recommended QA script</h3><span class="badge draft">Golden path</span></div>
       <div class="checklist">
@@ -1370,6 +1392,7 @@ function renderQA() {
           "Ask Mira for 3 angles from the Content Bank.",
           "Choose one angle and generate a draft.",
           "Open draft workspace, edit/save/approve/copy.",
+          "Rate whether the draft sounds like you, then revise it if needed.",
           "Confirm Library and Calendar reflect the state change.",
           "Use LinkedIn fallback and choose Not yet or Mark posted.",
         ].map((item, index) => `<div class="check done"><span>${index + 1}</span>${escapeHtml(item)}</div>`).join("")}
@@ -1606,6 +1629,9 @@ function bindView() {
   });
   document.querySelectorAll("[data-draft-review]").forEach((button) => {
     button.onclick = () => reviewDraft(button.dataset.draftReview);
+  });
+  document.querySelectorAll("[data-draft-feedback]").forEach((button) => {
+    button.onclick = () => handleVoiceFeedback(button.dataset.id, button.dataset.draftFeedback);
   });
   document.querySelectorAll("[data-library-expand]").forEach((button) => {
     button.onclick = () => toggleLibraryPost(button.dataset.libraryExpand);
@@ -1994,6 +2020,33 @@ async function useVariant(id, variantId) {
   showToast("Variant applied");
 }
 
+function handleVoiceFeedback(id, sentiment) {
+  if (sentiment === "sounds_like_me") {
+    sendDraftFeedback(id, sentiment, null);
+    return;
+  }
+  ui.modal = `<div class="modal-backdrop"><div class="modal"><div class="modal-head"><h3>What feels off?</h3><button class="icon-button" data-modal-close="true">Close</button></div><p class="muted">A short reason helps Mira avoid the same miss in your next draft.</p><textarea id="voice-feedback-reason" placeholder="Try: Too polished, too formal, wrong point of view, or not specific enough."></textarea><div class="modal-actions"><button class="button ghost" data-modal-close="true">Cancel</button><button class="button" id="submit-voice-feedback">Save feedback</button></div></div></div>`;
+  render();
+  document.querySelector("#submit-voice-feedback")?.addEventListener("click", () => {
+    const reason = document.querySelector("#voice-feedback-reason")?.value.trim();
+    sendDraftFeedback(id, sentiment, reason || "The draft does not match my voice yet");
+  });
+}
+
+async function sendDraftFeedback(id, sentiment, reason = null) {
+  try {
+    await api(`/api/drafts/${id}/feedback`, {
+      method: "POST",
+      body: JSON.stringify({ sentiment, reason }),
+    });
+    ui.modal = null;
+    await refresh();
+    showToast(sentiment === "sounds_like_me" ? "Mira saved this voice match" : "Mira will learn from your next edit");
+  } catch (error) {
+    showToast(error.message || "Could not save voice feedback");
+  }
+}
+
 async function approveDraft(id, schedule_type, scheduled_at = null) {
   try {
     setModalBusy(true, schedule_type === "now" ? "Marking as published…" : "Scheduling draft…");
@@ -2130,4 +2183,3 @@ function logout() {
 }
 
 refresh().catch((error) => layout(`<div class="page"><div class="notice">Could not load the app: ${escapeHtml(error.message)}</div></div>`));
-
