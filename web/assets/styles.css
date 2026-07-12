@@ -326,7 +326,7 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .bubble.user {
   justify-self: end; border-top-right-radius: 5px;
   background: var(--purple); border-color: var(--purple);
-  color: white;
+  color: white; padding-right: 20px;
 }
 .bubble.user .markdown,
 .bubble.user strong { color: white; }

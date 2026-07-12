@@ -174,11 +174,16 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     assert "Created:" in draft_meta
     assert "Suggested:" not in draft_meta
 
-    user_bubble_edges = page.locator(".msg.user .bubble").evaluate_all(
-        "(elements) => elements.map((element) => Math.round(element.getBoundingClientRect().right * 10) / 10)"
+    user_bubble_metrics = page.locator(".msg.user .bubble").evaluate_all(
+        """(elements) => elements.map((element) => ({
+            right: Math.round(element.getBoundingClientRect().right * 10) / 10,
+            paddingRight: Number.parseFloat(getComputedStyle(element).paddingRight),
+        }))"""
     )
-    assert len(user_bubble_edges) >= 2
+    assert len(user_bubble_metrics) >= 2
+    user_bubble_edges = [metric["right"] for metric in user_bubble_metrics]
     assert max(user_bubble_edges) - min(user_bubble_edges) <= 2
+    assert all(metric["paddingRight"] >= 20 for metric in user_bubble_metrics)
 
     page.locator('[data-testid="open-draft-workspace"]').first.click()
     draft_modal = page.locator('[data-testid="draft-review-modal"]')
