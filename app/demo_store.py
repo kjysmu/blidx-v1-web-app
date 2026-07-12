@@ -349,6 +349,12 @@ class DemoStore:
                     if followup_draft or self._wants_latest_context(content)
                     else self._extract_topic(content)
                 )
+                if not selected_angle_topic and wants_draft:
+                    self._set_workflow(
+                        state,
+                        selected_angle=None,
+                        draft_framework=None,
+                    )
                 if self._is_missing_draft_topic(topic):
                     reply = (
                         "I'm ready to draft, but I still need the subject. "
@@ -383,7 +389,6 @@ class DemoStore:
                         state,
                         stage="review",
                         last_topic=topic,
-                        selected_angle=selected_angle_topic,
                     )
             elif memory:
                 reply = self._memory_saved_strategy_reply(state, memory)
@@ -960,6 +965,8 @@ class DemoStore:
         workflow.setdefault("last_angles", [])
         workflow.setdefault("last_memory_id", None)
         workflow.setdefault("updated_at", utc_now().isoformat())
+        if workflow.get("selected_angle") and not isinstance(workflow["selected_angle"], dict):
+            workflow["selected_angle"] = None
         state.setdefault(
             "linkedin",
             {
@@ -1120,6 +1127,7 @@ class DemoStore:
         latest: str = "",
         memory_id: str | None = None,
     ) -> list[dict]:
+        topic = DemoStore._subject_from_topic(topic)
         profile = state.get("profile", {})
         audience_label = ", ".join((profile.get("audience") or ["your audience"])[:3])
         angles = DemoStore._angle_options(topic, latest, audience_label)
@@ -1127,6 +1135,7 @@ class DemoStore:
             state,
             stage="angle_choice",
             last_topic=topic,
+            angle_topic=topic,
             last_angles=angles,
             last_memory_id=memory_id,
             selected_angle=None,
@@ -1180,7 +1189,8 @@ class DemoStore:
 
         lowered = content.lower().strip()
         match = re.search(r"\b(?:angle|option|direction)\s*([123])\b", lowered)
-        if not match:
+        match_index = int(match.group(1)) if match else None
+        if match_index is None:
             ordinal_map = {
                 "first": 1,
                 "second": 2,
@@ -1192,23 +1202,36 @@ class DemoStore:
                 ):
                     match_index = number
                     break
-            else:
-                return None
-        else:
-            match_index = int(match.group(1))
+        if match_index is None:
+            for index, angle in enumerate(angles, start=1):
+                title = (angle.get("title") or "").lower().strip()
+                if title and title in lowered and any(
+                    signal in lowered for signal in ("angle", "draft", "direction")
+                ):
+                    match_index = index
+                    break
+        if match_index is None:
+            return None
 
         index = match_index - 1
         if index < 0 or index >= len(angles):
             return None
         selected = angles[index]
+        topic = DemoStore._subject_from_topic(
+            workflow.get("angle_topic")
+            or workflow.get("last_topic")
+            or selected.get("prompt")
+            or selected.get("title")
+        )
         DemoStore._set_workflow(
             state,
             stage="draft",
             selected_angle=selected,
-            last_topic=selected.get("prompt") or selected.get("title"),
+            last_topic=topic,
+            angle_topic=topic,
             draft_framework=selected.get("framework"),
         )
-        return selected.get("prompt") or selected.get("title")
+        return topic
 
     @staticmethod
     def _wants_draft(content: str) -> bool:
@@ -1321,6 +1344,13 @@ class DemoStore:
         topic = content.strip()
         lowered = topic.lower()
         prefixes = (
+            "i would like to post about",
+            "i'd like to post about",
+            "i want to post about",
+            "i would like to write about",
+            "i'd like to write about",
+            "i want to write about",
+            "i want a post about",
             "draft a fresh take on",
             "draft a post about",
             "draft about",
@@ -1376,25 +1406,51 @@ class DemoStore:
     @staticmethod
     def _topic_from_context(state: dict, current_content: str | None = None) -> str | None:
         workflow = state.get("mira_workflow") or {}
-        selected_angle = workflow.get("selected_angle") or {}
-        if selected_angle.get("prompt"):
-            return selected_angle["prompt"]
-        last_angles = workflow.get("last_angles") or []
-        if last_angles and workflow.get("stage") == "angle_choice":
-            first_angle = last_angles[0]
-            if first_angle.get("prompt"):
-                return first_angle["prompt"]
-        if current_content and DemoStore._wants_latest_context(current_content) and state.get("content_bank"):
+        current_lowered = (current_content or "").lower()
+        wants_bank_context = any(
+            phrase in current_lowered
+            for phrase in (
+                "latest memory",
+                "latest content bank",
+                "from my memory",
+                "from my content bank",
+                "from the content bank",
+            )
+        )
+        if wants_bank_context and state.get("content_bank"):
             latest = state["content_bank"][0]["raw_text"]
             if "ai" in latest.lower() and "mental" in json.dumps(state.get("profile", {})).lower():
                 return "human connection versus AI in mental health"
             return latest[:140]
+
+        last_angles = workflow.get("last_angles") or []
+        if (
+            current_content
+            and DemoStore._is_affirmative_text(current_content)
+            and last_angles
+            and workflow.get("stage") == "angle_choice"
+        ):
+            first_angle = last_angles[0]
+            topic = DemoStore._subject_from_topic(
+                workflow.get("angle_topic") or workflow.get("last_topic") or first_angle.get("prompt", "")
+            )
+            DemoStore._set_workflow(
+                state,
+                stage="draft",
+                selected_angle=first_angle,
+                last_topic=topic,
+                angle_topic=topic,
+                draft_framework=first_angle.get("framework"),
+            )
+            return topic
         recent_topic = DemoStore._topic_from_recent_draft_request(state, current_content)
         if recent_topic:
-            return recent_topic
+            return DemoStore._subject_from_topic(recent_topic)
         last_topic = workflow.get("last_topic")
         if last_topic and not DemoStore._is_missing_draft_topic(last_topic):
-            return last_topic
+            return DemoStore._subject_from_topic(
+                workflow.get("angle_topic") or last_topic
+            )
         return None
 
     @staticmethod
@@ -1479,12 +1535,10 @@ class DemoStore:
         return cut.rstrip(" ,;:—-–")
 
     @staticmethod
-    def _draft_title(topic: str) -> str:
-        """Turn a drafting topic — which may be a verbose angle prompt — into a
-        clean human title that survives every surface it appears on."""
-        base = DemoStore._clean_topic(topic)
+    def _subject_from_topic(topic: str) -> str:
+        """Return the subject without chat commands or angle scaffolding."""
+        base = DemoStore._clean_topic(DemoStore._extract_topic(topic))
         lowered = base.lower()
-        # Angle prompts wrap the real subject in scaffolding; unwrap it.
         for prefix, stop in (
             ("specific moment around ", ": what changed"),
             ("founder pov on ", ": what most people"),
@@ -1496,11 +1550,19 @@ class DemoStore:
                 if stop_index > 0:
                     base = base[:stop_index]
                 break
-        else:
-            # Angle details usually quote the underlying moment — prefer it.
+        if re.match(r"^(?:specific moment|founder pov|useful question)\s*:", base, re.IGNORECASE):
             quoted = re.search(r"[“\"]([^”\"]{12,})[”\"]", base)
             if quoted:
                 base = quoted.group(1)
+        return base.strip(" .,:;—-–") or topic.strip()
+
+    @staticmethod
+    def _draft_title(topic: str) -> str:
+        """Turn a drafting topic into a clean title for every product surface."""
+        base = DemoStore._subject_from_topic(topic)
+        quoted = re.search(r"[“\"]([^”\"]{12,})[”\"]", base)
+        if quoted:
+            base = quoted.group(1)
         # Diary-style lead-ins make weak titles.
         changed = True
         while changed:
@@ -1521,7 +1583,7 @@ class DemoStore:
     @staticmethod
     def _draft(state: dict, topic: str, source: str) -> dict:
         profile = state["profile"]
-        topic = DemoStore._clean_topic(topic)
+        topic = DemoStore._subject_from_topic(topic)
         memory = DemoStore._relevant_memory(state, topic)
         first_name = profile.get("first_name") or "there"
         content, provider, error = DemoStore._generate_ai_draft(state, topic)
@@ -1724,7 +1786,14 @@ class DemoStore:
     @staticmethod
     def _draft_variants(state: dict, topic: str, main_content: str) -> list[dict]:
         profile = state["profile"]
-        topic = DemoStore._clean_topic(topic)
+        topic = DemoStore._subject_from_topic(topic)
+        topic_specific = DemoStore._topic_specific_variants(topic)
+        if topic_specific:
+            return [
+                variant
+                for variant in topic_specific
+                if variant["content"].strip() != main_content.strip()
+            ]
         memory_entry = DemoStore._relevant_memory(state, topic)
         use_company = DemoStore._should_use_company_anchor(state, topic, memory_entry)
         company = profile.get("company_name") or "my company"
@@ -1804,8 +1873,80 @@ class DemoStore:
         ]
 
     @staticmethod
+    def _topic_specific_variants(topic: str) -> list[dict]:
+        topic_terms = DemoStore._topic_terms(topic)
+        music_terms = {
+            "music",
+            "musical",
+            "composer",
+            "composers",
+            "composition",
+            "songwriter",
+            "songwriting",
+            "musician",
+            "musicians",
+        }
+        if "ai" not in topic_terms or not topic_terms & music_terms:
+            return []
+
+        variants = [
+            {
+                "id": "creative_sketchbook",
+                "label": "Creative sketchbook",
+                "positioning": "Frame AI as a way to explore, while the composer keeps authorship.",
+                "content": (
+                    "AI can be useful to a composer long before it produces a finished piece.\n\n"
+                    "Give it an unfinished melody and it can surface alternatives: a different harmony, "
+                    "a change in rhythm, another direction for the arrangement.\n\n"
+                    "The value is not that every suggestion is good. Most creative exploration works because "
+                    "someone with taste can hear what belongs and discard what does not.\n\n"
+                    "That responsibility stays with the human composer. AI makes the sketchbook larger; the "
+                    "composer still decides what the music is trying to say.\n\n"
+                    "That is the version of AI and music I want to see more of: more possibilities in the room, "
+                    "with human intention making the final choice.\n\n"
+                    "Would that feel like support in your creative process, or interference?"
+                ),
+            },
+            {
+                "id": "better_question",
+                "label": "The better question",
+                "positioning": "Challenge the replacement debate and focus on creative judgment.",
+                "content": (
+                    "\"Can AI compose music?\" is probably the least interesting question in the debate.\n\n"
+                    "A model can generate notes, melodies, and variations. The harder work begins after that: "
+                    "choosing what carries emotion, what feels coherent, and what is worth developing.\n\n"
+                    "AI can accelerate the search. A human composer gives that search direction.\n\n"
+                    "So I am less interested in whether a machine can produce a song. I am more interested in "
+                    "whether it can help a composer explore farther without flattening the intention that made "
+                    "the piece human in the first place.\n\n"
+                    "What matters is what people can express with these tools, not only what the tools can "
+                    "generate alone."
+                ),
+            },
+            {
+                "id": "practical_collaboration",
+                "label": "Practical collaboration",
+                "positioning": "Show concrete places where AI can support a composer's process.",
+                "content": (
+                    "Three places AI can help a human composer without taking over the composition:\n\n"
+                    "1/ Exploration - generate variations when one passage feels stuck.\n"
+                    "2/ Arrangement - test how an idea changes across instruments or structures.\n"
+                    "3/ Iteration - compare options quickly before committing to one direction.\n\n"
+                    "And one boundary matters across all three: the composer decides what stays.\n\n"
+                    "Speed can create more options. It cannot decide which option carries the meaning of the "
+                    "piece. That still depends on a person listening with context, memory, and taste.\n\n"
+                    "Where in the creative process would that kind of collaboration be most useful to you?"
+                ),
+            },
+        ]
+        return [
+            {**variant, "char_count": len(variant["content"])}
+            for variant in variants
+        ]
+
+    @staticmethod
     def _variant_theme(topic: str) -> str:
-        topic = DemoStore._clean_topic(topic)
+        topic = DemoStore._subject_from_topic(topic)
         lowered = topic.lower()
         if "scattered" in lowered and "content" in lowered:
             return "turning scattered founder context into content"
@@ -1819,7 +1960,7 @@ class DemoStore:
     @staticmethod
     def _fallback_draft_text(state: dict, topic: str) -> str:
         profile = state["profile"]
-        topic = DemoStore._clean_topic(topic)
+        topic = DemoStore._subject_from_topic(topic)
         memory = DemoStore._relevant_memory(state, topic)
         use_company = DemoStore._should_use_company_anchor(state, topic, memory)
         company = profile.get("company_name") or "my company"
@@ -1835,6 +1976,33 @@ class DemoStore:
             "mental health" in industry.lower()
             and ("mental health" in topic.lower() or bool(topic_terms & industry_terms))
         )
+        music_terms = {
+            "music",
+            "musical",
+            "composer",
+            "composers",
+            "composition",
+            "songwriter",
+            "songwriting",
+            "musician",
+            "musicians",
+        }
+        if "ai" in topic_terms and topic_terms & music_terms:
+            return (
+                "AI and music are often discussed as a contest between machine and artist. "
+                "That framing misses the useful part.\n\n"
+                "Give AI an unfinished passage and it can suggest several ways forward. "
+                "That can help. It is not the same as composing.\n\n"
+                "The composer's job is not only to produce notes. It is to decide which idea carries the "
+                "right tension, memory, and intention - and which technically plausible idea says nothing.\n\n"
+                "Used well, AI can help with exploration: trying variations, testing an arrangement, or "
+                "getting past the first blank bar. The human still chooses what belongs in the piece.\n\n"
+                "That is the relationship I find interesting. The machine can widen the options without "
+                "owning the taste behind the final choice.\n\n"
+                "The goal should not be music made without people. It should be giving human composers "
+                "more room to shape what they actually want to express.\n\n"
+                "Where would you welcome AI in the creative process, and where should it stay out?"
+            )
         if use_mental_health_frame:
             anchor = (
                 f"At {company}, this question keeps coming back to one thing"
@@ -1856,7 +2024,8 @@ class DemoStore:
             )
 
         personal_block = DemoStore._ensure_sentence(memory_text) or (
-            f"The interesting part is what {hook} changes about taste, judgment, and the way people decide what feels meaningful."
+            f"I have been thinking about {hook}. The useful question is where it changes a real decision, "
+            "not whether it sounds important in the abstract."
         )
         if style == "field_note":
             company_line = (
@@ -1944,6 +2113,8 @@ class DemoStore:
     def _fallback_style(state: dict, topic: str) -> str:
         workflow = state.get("mira_workflow") or {}
         selected_angle = workflow.get("selected_angle") or {}
+        if not isinstance(selected_angle, dict):
+            selected_angle = {}
         if selected_angle.get("framework"):
             return selected_angle["framework"]
         if workflow.get("draft_framework"):
@@ -1970,6 +2141,13 @@ class DemoStore:
         cleaned = topic.strip().strip('"“”').rstrip(".")
         lowered = cleaned.lower()
         prefixes = (
+            "i would like to post about",
+            "i'd like to post about",
+            "i want to post about",
+            "i would like to write about",
+            "i'd like to write about",
+            "i want to write about",
+            "i want a post about",
             "draft a post about",
             "draft about",
             "draft a linkedin post about",
@@ -2220,13 +2398,24 @@ class DemoStore:
     @staticmethod
     def _context_package(state: dict, topic: str) -> str:
         profile = state["profile"]
-        topic = DemoStore._clean_topic(topic)
+        topic = DemoStore._subject_from_topic(topic)
         memory = DemoStore._relevant_memory(state, topic)
         memories = [memory] if memory else []
         writing_samples = profile.get("writing_samples") or []
         avoided = profile.get("avoided_phrases") or []
         framework = DemoStore._fallback_style(state, topic)
         recent_openings = DemoStore._recent_openings(state)
+        workflow = state.get("mira_workflow") or {}
+        selected_angle = workflow.get("selected_angle") or {}
+        if not isinstance(selected_angle, dict):
+            selected_angle = {}
+        angle_direction = "No specific angle selected."
+        if selected_angle:
+            angle_direction = (
+                f"{selected_angle.get('title') or 'Selected angle'}: "
+                f"{selected_angle.get('detail') or selected_angle.get('prompt') or ''}\n"
+                "This is an editorial direction only. It must not replace or be repeated as the post topic."
+            )
 
         return "\n\n".join(
             [
@@ -2242,6 +2431,7 @@ class DemoStore:
                 "If it is practical framework, make the steps useful without sounding like a generic listicle.\n"
                 "If it is story-led observation, keep the post smaller and more human.\n"
                 "If it is contrarian take, show the better disagreement without being performative.",
+                "SELECTED ANGLE\n" + angle_direction,
                 "USER PROFILE\n" + json.dumps(profile, indent=2),
                 "VOICE CONTROLS\n"
                 f"Preferred structure: {profile.get('preferred_structure') or 'Not specified'}\n"

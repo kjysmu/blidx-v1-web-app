@@ -871,7 +871,7 @@ function angleActions(content = "") {
   if (!angles.length) return "";
   return `<div class="angle-actions">
     <div class="angle-actions-label">Turn an angle into a draft</div>
-    ${angles.map((angle, index) => `<button class="angle-action" data-testid="angle-action" data-angle-prompt="${escapeHtml(angle.prompt)}" data-angle-label="${escapeHtml(angle.title)}">
+    ${angles.map((angle, index) => `<button class="angle-action" data-testid="angle-action" data-angle-number="${index + 1}" data-angle-label="${escapeHtml(angle.title)}">
       <span>Draft angle ${index + 1}</span>
       <strong>${escapeHtml(angle.title)}</strong>
     </button>`).join("")}
@@ -1763,9 +1763,9 @@ function bindView() {
   document.querySelectorAll("[data-prompt]").forEach((button) => {
     button.onclick = () => submitPrompt(button.dataset.prompt);
   });
-  document.querySelectorAll("[data-angle-prompt]").forEach((button) => {
+  document.querySelectorAll("[data-angle-number]").forEach((button) => {
     button.onclick = () => submitPrompt(
-      button.dataset.anglePrompt,
+      `Draft angle ${button.dataset.angleNumber}: ${button.dataset.angleLabel || "selected direction"}`,
       button.dataset.angleLabel ? `Draft it from the “${button.dataset.angleLabel}” angle` : null,
     );
   });

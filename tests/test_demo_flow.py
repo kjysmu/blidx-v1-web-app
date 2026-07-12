@@ -204,6 +204,60 @@ def test_generic_chat_draft_does_not_force_company_anchor(monkeypatch):
     client.post("/api/reset")
 
 
+def test_specific_moment_angle_keeps_ai_composer_as_the_subject(monkeypatch):
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
+    client.post("/api/reset")
+
+    strategy_response = client.post(
+        "/api/chat/message",
+        json={"message": "I want to post about how AI can help human composer."},
+    )
+
+    assert strategy_response.status_code == 200
+    strategy = strategy_response.json()
+    assert strategy["post"] is None
+    assert "1/ Specific moment" in strategy["reply"]
+    assert strategy["state"]["mira_workflow"]["last_topic"] == "how AI can help human composer"
+
+    draft_response = client.post(
+        "/api/chat/message",
+        json={
+            "message": (
+                "Draft a LinkedIn post from this angle: Specific moment: "
+                "Lead with the real scene behind \"how AI can help human composer\" "
+                "and show what changed in your thinking."
+            ),
+            "display": "Draft it from the 'Specific moment' angle",
+        },
+    )
+
+    assert draft_response.status_code == 200
+    payload = draft_response.json()
+    assert payload["actions"] == ["draft_created"]
+    post = payload["post"]
+    content = post["content"].lower()
+    assert post["generation_provider"] == "template"
+    assert post["topic"] == "how AI can help human composer"
+    assert post["title"] == "How AI can help human composer"
+    assert "ai and music" in content
+    assert "composer" in content
+    assert "specific moment around" not in content
+    assert "what changed in my thinking" not in content
+    assert "i want to post about" not in content
+    assert "blidx" not in content
+    assert payload["state"]["mira_workflow"]["selected_angle"]["id"] == "angle_1"
+    assert len(post["variants"]) == 3
+    for variant in post["variants"]:
+        variant_content = variant["content"].lower()
+        assert "ai" in variant_content
+        assert "music" in variant_content or "composer" in variant_content
+        assert "blidx" not in variant_content
+        assert "founder-led content" not in variant_content
+        assert "specific moment around" not in variant_content
+
+    client.post("/api/reset")
+
+
 def test_just_draft_it_never_becomes_the_draft_topic_without_prior_subject(monkeypatch):
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
     client.post("/api/reset")
@@ -498,7 +552,14 @@ def test_selected_angle_controls_draft_framework():
 
     assert "draft_created" in first_angle["actions"]
     assert "field note framework" in first_angle["post"]["message"]
-    assert "A small note from this week" in first_angle["post"]["content"]
+    assert any(
+        opening in first_angle["post"]["content"]
+        for opening in (
+            "A small note from this week",
+            "Something from this week that stuck with me",
+            "I keep coming back to one moment from this week",
+        )
+    )
 
     client.post("/api/reset")
     client.post(
