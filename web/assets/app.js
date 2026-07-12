@@ -170,12 +170,25 @@ function extractAnglesFromMessage(content = "") {
   return angles.slice(0, 3);
 }
 
+const icons = {
+  chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6A8.38 8.38 0 0 1 12.5 3h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
+  bank: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>',
+  library: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+  settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
+};
+
+function miraAvatar(size = 38) {
+  return `<span class="mira-avatar" style="width:${size}px;height:${size}px" aria-hidden="true"><svg viewBox="0 0 40 40"><defs><linearGradient id="mira-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8073e3"/><stop offset="1" stop-color="#453a9e"/></linearGradient></defs><circle cx="20" cy="20" r="20" fill="url(#mira-grad)"/><text x="20" y="26.5" text-anchor="middle" font-family="DM Serif Display, serif" font-size="19" fill="#fff">M</text></svg></span>`;
+}
+
 const navItems = [
-  ["chat", "✦", "Chat"],
-  ["bank", "▦", "Bank"],
-  ["library", "▤", "Library"],
-  ["calendar", "□", "Calendar"],
-  ["settings", "⚙", "Settings"],
+  ["chat", icons.chat, "Chat"],
+  ["bank", icons.bank, "Bank"],
+  ["library", icons.library, "Library"],
+  ["calendar", icons.calendar, "Calendar"],
+  ["settings", icons.settings, "Settings"],
 ];
 
 const memoryTemplates = [
@@ -186,18 +199,6 @@ const memoryTemplates = [
 
 const freshnessOptions = [["fresh", "Fresh"], ["used", "Used"], ["archived", "Archived"]];
 const potentialOptions = [["high", "High"], ["medium", "Medium"], ["low", "Low"]];
-
-function sectionLabel() {
-  return {
-    chat: "Content workspace",
-    bank: "Content Bank",
-    library: "Library",
-    calendar: "Calendar",
-    analytics: "Progress",
-    qa: "QA status",
-    settings: "Settings",
-  }[ui.tab] || "Content workspace";
-}
 
 function quickActionsMenu() {
   if (!ui.quickActionsOpen) return "";
@@ -232,7 +233,7 @@ function layout(content) {
       </aside>
       <main class="main">
         <header class="topbar">
-          <div class="mira-id"><div class="avatar">M</div><div><div class="mira-name">Mira</div><div class="online">● ${sectionLabel()}</div></div></div>
+          <div class="mira-id">${miraAvatar(38)}<div><div class="mira-name">Mira</div><div class="online">${ui.loading ? "Thinking…" : "Online"}</div></div></div>
           <div class="top-actions">
             <span class="account-pill">${accountLabel()}</span>
             <div class="quick-actions-wrap">
@@ -741,12 +742,12 @@ function renderChat() {
       <div class="chat-stream" data-testid="chat-stream" style="margin-top:18px">
         ${timeline}
         ${proactiveBubble()}
-        ${ui.loading ? '<div class="bubble mira typing"><strong>Mira</strong><br>Thinking through the angle…</div>' : ""}
+        ${ui.loading ? `<div class="msg mira"><div class="msg-label">Mira</div><div class="msg-row">${miraAvatar(24)}<div class="bubble mira typing"><span class="typing-dots"><i></i><i></i><i></i></span>Thinking it through…</div></div></div>` : ""}
       </div>
       <div class="composer">
         <form class="composer-box" id="chat-form">
-          <input class="input" id="chat-message" data-testid="chat-message" placeholder="Try: This week I noticed..." required minlength="2" />
-          <button class="button" data-testid="chat-send" ${ui.loading ? "disabled" : ""}>${ui.loading ? "Working…" : "Send"}</button>
+          <input class="input" id="chat-message" data-testid="chat-message" placeholder="Message Mira…" required minlength="2" />
+          <button class="button send-button" data-testid="chat-send" aria-label="Send message" ${ui.loading ? "disabled" : ""}>${icons.send}</button>
         </form>
         ${currentDraftShortcut(activeDrafts)}
         <div class="prompt-row">
@@ -804,9 +805,9 @@ function proactiveBubble() {
       : brief.action === "draft_repurpose"
         ? `<button class="button" data-testid="proactive-action" data-prompt="${escapeHtml(`Draft a fresh take on "${brief.topic}"`)}">Draft a fresh take</button>`
         : "";
-  return `<div class="bubble mira proactive" data-testid="proactive-brief"><strong>Mira</strong><br>${escapeHtml(brief.message)}
+  return `<div class="msg mira"><div class="msg-label">Mira</div><div class="msg-row">${miraAvatar(24)}<div class="bubble mira proactive" data-testid="proactive-brief">${escapeHtml(brief.message)}
     <div class="proactive-actions">${action}<button class="button ghost" data-proactive-dismiss>Not now</button></div>
-  </div>`;
+  </div></div></div>`;
 }
 
 function currentDraftShortcut(activeDrafts) {
@@ -844,10 +845,20 @@ function chatTimeline(messages, drafts) {
     items.push({ type: "draft", time: timeValue(draft.created_at), order: order++, html: draftCard(draft, true) });
   });
 
-  return items
-    .sort((a, b) => a.time - b.time || a.order - b.order)
-    .map((item) => item.html)
-    .join("");
+  const sorted = items.sort((a, b) => a.time - b.time || a.order - b.order);
+  const parts = [];
+  let lastDateKey = null;
+  sorted.forEach((item) => {
+    if (Number.isFinite(item.time)) {
+      const key = new Date(item.time).toDateString();
+      if (key !== lastDateKey) {
+        parts.push(`<div class="date-divider"><span>${dateDividerLabel(item.time)}</span></div>`);
+        lastDateKey = key;
+      }
+    }
+    parts.push(item.html);
+  });
+  return parts.join("");
 }
 
 function timeValue(value) {
@@ -860,10 +871,34 @@ function quickPrompt(text) {
   return `<button class="prompt-chip" data-prompt="${escapeHtml(text)}">${escapeHtml(text)}</button>`;
 }
 
+function formatMessageTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
+}
+
+function dateDividerLabel(time) {
+  const date = new Date(time);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const day = new Date(date); day.setHours(0, 0, 0, 0);
+  const diff = Math.round((today - day) / 86400000);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
 function messageBubble(message) {
   const role = message.role === "user" ? "user" : "mira";
-  const label = role === "user" ? "You" : "Mira";
-  return `<div class="bubble ${role}"><strong>${label}</strong><div class="markdown">${renderMarkdown(message.content || "")}</div>${role === "mira" ? angleActions(message.content) : ""}</div>`;
+  const time = formatMessageTime(message.created_at);
+  return `<div class="msg ${role}">
+    ${role === "mira" ? '<div class="msg-label">Mira</div>' : ""}
+    <div class="msg-row">
+      ${role === "mira" ? miraAvatar(24) : ""}
+      <div class="bubble ${role}"><div class="markdown">${renderMarkdown(message.content || "")}</div>${role === "mira" ? angleActions(message.content) : ""}</div>
+    </div>
+    ${time ? `<div class="msg-time">${time}</div>` : ""}
+  </div>`;
 }
 
 function angleActions(content = "") {
@@ -878,13 +913,19 @@ function angleActions(content = "") {
   </div>`;
 }
 
+function suggestedLabel(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return `Suggested: ${date.toLocaleDateString([], { weekday: "short" })} ${formatMessageTime(value)}`;
+}
+
 function draftCard(post, compact = true) {
-  const provider = post.generation_provider || "template";
   const publishLabel = ui.integrations?.linkedin?.connected ? "Publish to LinkedIn" : "Copy & open LinkedIn";
   const content = post.content || "";
   const excerpt = escapeHtml(stripMarkdown(content).slice(0, 220));
   return `<article class="draft-card compact" data-testid="draft-card" data-post="${post.id}">
-    <div class="draft-meta"><span>Draft v${post.version} · ${post.source.replace("_", " ")} · ${escapeHtml(provider)}</span><span>${post.char_count} / 3,000</span></div>
+    <div class="draft-meta"><span class="draft-eyebrow">Draft post</span><span>${suggestedLabel(post.created_at)} · v${post.version} · ${post.char_count}/3,000</span></div>
     <div class="draft-summary"><div><strong>Draft ready: ${escapeHtml(post.title || "Untitled draft")}</strong><p>${excerpt}${content.length > 220 ? "…" : ""}</p><button class="read-more" data-testid="open-draft-workspace" data-draft-review="${post.id}">Open draft workspace</button></div><span class="badge draft">pending review</span></div>
     <div class="draft-actions">
       <button class="button" data-testid="review-draft" data-draft-review="${post.id}">Review & edit</button>
@@ -1140,10 +1181,27 @@ function defaultCustomScheduleValue() {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function miraBanner() {
+  const brief = ui.state.proactive_brief;
+  if (!brief || ui.proactiveDismissed) return "";
+  const action = brief.action === "review_draft"
+    ? `<button class="button" data-draft-review="${brief.post_id}">Open draft workspace</button>`
+    : brief.action === "draft_latest_memory"
+      ? '<button class="button" data-banner-prompt="Draft from my latest memory">Draft it</button>'
+      : brief.action === "draft_repurpose"
+        ? `<button class="button" data-banner-prompt="${escapeHtml(`Draft a fresh take on "${brief.topic}"`)}" data-banner-label="${escapeHtml(`Draft a fresh take on “${brief.topic}”`)}">Draft follow-up</button>`
+        : "";
+  return `<div class="mira-banner">
+    ${miraAvatar(28)}
+    <div><p>${escapeHtml(brief.message)}</p>${action}</div>
+  </div>`;
+}
+
 function renderLibrary() {
   const posts = filteredLibraryPosts();
   return `<section class="page" data-testid="library-page"><div class="eyebrow">Content pipeline</div><h1>Library</h1><p class="lead">Every draft, scheduled post, and published post stays visible here.</p>
     ${libraryControls()}
+    ${miraBanner()}
     <div class="list">${posts.length ? posts.map(libraryItem).join("") : libraryEmptyState()}</div>
   </section>`;
 }
@@ -1759,6 +1817,14 @@ function bindView() {
   });
   document.querySelectorAll("[data-proactive-dismiss]").forEach((button) => {
     button.onclick = () => { ui.proactiveDismissed = true; render(); };
+  });
+  document.querySelectorAll("[data-banner-prompt]").forEach((button) => {
+    button.onclick = () => {
+      ui.tab = "chat";
+      render();
+      window.scrollTo(0, 0);
+      submitPrompt(button.dataset.bannerPrompt, button.dataset.bannerLabel || null);
+    };
   });
   document.querySelectorAll("[data-prompt]").forEach((button) => {
     button.onclick = () => submitPrompt(button.dataset.prompt);
