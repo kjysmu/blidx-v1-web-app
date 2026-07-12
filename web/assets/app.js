@@ -1580,14 +1580,30 @@ function settingsRow(icon, tone, label, value, action = "") {
   </div>`;
 }
 
-function toggleRow(icon, label, value, active = true) {
-  return `<div class="settings-row">
-    <div class="settings-row-icon green">${escapeHtml(icon)}</div>
+function timezoneOffsetLabel(timeZone) {
+  try {
+    const parts = new Intl.DateTimeFormat("en", { timeZone, timeZoneName: "shortOffset" }).formatToParts(new Date());
+    return parts.find((part) => part.type === "timeZoneName")?.value || "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function timezoneRow(p) {
+  const profileTz = p.timezone || "UTC";
+  let detected = null;
+  try {
+    detected = Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch (error) { /* unsupported browser: just show the stored timezone */ }
+  const offset = timezoneOffsetLabel(profileTz);
+  const mismatch = detected && detected !== profileTz;
+  return `<div class="settings-row settings-action-row">
+    <div class="settings-row-icon blue">🌏</div>
     <div class="settings-row-body">
-      <div class="settings-row-label">${escapeHtml(label)}</div>
-      <div class="settings-row-value">${escapeHtml(value)}</div>
+      <div class="settings-row-label">Timezone</div>
+      <div class="settings-row-value">${escapeHtml(profileTz)}${offset ? ` (${offset})` : ""} · used for post scheduling</div>
     </div>
-    <div class="toggle ${active ? "on" : ""}" aria-hidden="true"></div>
+    ${mismatch ? `<button type="button" class="button secondary settings-inline-button" id="use-detected-timezone" data-timezone="${escapeHtml(detected)}">Use ${escapeHtml(detected)}</button>` : ""}
   </div>`;
 }
 
@@ -1649,14 +1665,7 @@ function renderSettings() {
         ${linkedin?.connected ? '<button class="li-action disconnect" type="button" id="disconnect-linkedin">Disconnect</button>' : '<button class="li-action connect" type="button" id="connect-linkedin">Connect</button>'}
       </div>
     </div>
-    ${settingsSection("Notifications", [
-      toggleRow("🔔", "Push notifications", "Drafts ready, performance updates, reminders", true),
-      toggleRow("✉", "Email nudges", "When you have not opened Blidx in a while", true),
-      settingsRow("⏰", "green", "Daily check-in time", "6:00 PM"),
-    ])}
-    ${settingsSection("Timezone", [
-      settingsRow("🌏", "blue", "Timezone", "Asia/Singapore (GMT+8) · Auto-detected"),
-    ])}
+    ${settingsSection("Timezone", [timezoneRow(p)])}
     <div class="settings-section">
       <div class="settings-header">Account</div>
       <div class="settings-group">
@@ -1729,6 +1738,13 @@ function bindView() {
   document.querySelector("#logout-all-form")?.addEventListener("submit", logoutAllDevices);
   document.querySelector("#connect-linkedin")?.addEventListener("click", connectLinkedIn);
   document.querySelector("#disconnect-linkedin")?.addEventListener("click", disconnectLinkedIn);
+  document.querySelector("#use-detected-timezone")?.addEventListener("click", async (event) => {
+    const timezone = event.currentTarget.dataset.timezone;
+    if (!timezone) return;
+    await api("/api/profile", { method: "PUT", body: JSON.stringify({ timezone }) });
+    await refresh();
+    showToast(`Timezone set to ${timezone}`);
+  });
   const chatGuide = document.querySelector("#chat-guide");
   if (chatGuide) chatGuide.addEventListener("toggle", () => { ui.chatGuideOpen = chatGuide.open; });
   document.querySelectorAll("[data-calendar-nav]").forEach((button) => {

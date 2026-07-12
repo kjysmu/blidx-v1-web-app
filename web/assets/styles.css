@@ -823,17 +823,6 @@ button.settings-row-link:hover { background: #faf9ff; }
 }
 .li-action.connect { background: var(--purple); color: white; }
 .li-action.disconnect { background: var(--green-soft); color: var(--green); }
-.toggle {
-  width: 42px; height: 24px; border-radius: 999px;
-  background: var(--paper-3); position: relative;
-}
-.toggle::after {
-  content: ""; position: absolute; top: 3px; left: 3px;
-  width: 18px; height: 18px; border-radius: 50%; background: white;
-  box-shadow: 0 1px 4px rgba(0,0,0,.15); transition: transform .2s ease;
-}
-.toggle.on { background: var(--purple); }
-.toggle.on::after { transform: translateX(18px); }
 .settings-system { margin-top: 24px; }
 .settings-version {
   padding: 20px 16px; text-align: center;

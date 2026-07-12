@@ -202,7 +202,10 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     settings_page.wait_for()
     settings_page.get_by_text("Your Profile", exact=True).wait_for()
     settings_page.get_by_text("LinkedIn", exact=True).first.wait_for()
-    settings_page.get_by_text("Notifications", exact=True).wait_for()
+    settings_page.get_by_text("Timezone", exact=True).first.wait_for()
+    # Decorative notification toggles were removed — nothing should claim
+    # push/email delivery exists until it does.
+    assert settings_page.get_by_text("Push notifications").count() == 0
     settings_page.get_by_text("Account", exact=True).wait_for()
     settings_page.get_by_text("Email verified", exact=True).wait_for()
     settings_page.get_by_text("Mira profile details").wait_for()
