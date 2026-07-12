@@ -90,6 +90,9 @@ makes two Anthropic calls, so it is never run automatically during tests or depl
 GET /health
 POST /auth/register
 POST /auth/login
+GET /auth/me
+POST /auth/change-password
+POST /auth/logout-all
 GET /profile
 POST /profile
 PUT /profile
@@ -123,6 +126,19 @@ Postgres workspace tables. Local development can still use JSON files by setting
   but it adds a second backend stack while the MVP is still FastAPI-first. The
   current recommendation is to defer PayloadCMS and use the lightweight `/admin`
   route until the product needs a marketer-managed CMS or a full Next.js app.
+- Account security: password changes revoke older tokens while returning a fresh
+  token to the current device. Users can also revoke every session, expired and
+  revoked sessions return distinct errors, and login attempts are throttled by
+  account and client address. Persistent account lockout state lives in Postgres.
+
+Login protection can be tuned with:
+
+```txt
+AUTH_MAX_FAILED_ATTEMPTS
+AUTH_LOCKOUT_MINUTES
+LOGIN_RATE_LIMIT_ATTEMPTS
+LOGIN_RATE_LIMIT_WINDOW_SECONDS
+```
 
 ### Required secrets
 
@@ -138,9 +154,9 @@ ADMIN_USERNAME
 ADMIN_PASSWORD
 ```
 
-The current LinkedIn app redirect URLs provided by Malia are for
-`localhost:3000` and `app.blidx.com`. The Render staging URL will not complete
-OAuth until it is added to LinkedIn or routed behind `app.blidx.com`.
+The LinkedIn Developer app must authorize the exact callback configured in
+`LINKEDIN_REDIRECT_URI`. For Render staging, that is currently
+`https://blidx-v1-web-app.onrender.com/auth/linkedin/callback`.
 
 ## Deploy to Render
 

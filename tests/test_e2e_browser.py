@@ -5,10 +5,14 @@ import subprocess
 import sys
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.request import urlopen
 
 import pytest
+from jose import jwt
+
+from app.core.config import settings
 
 playwright_sync = pytest.importorskip("playwright.sync_api")
 
@@ -189,6 +193,22 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     assert settings_page.get_by_text("PayloadCMS review", exact=True).count() == 0
     settings_page.locator('input[name="first_name"]').wait_for()
 
+    page.locator("#change-password").click()
+    password_modal = page.locator('[data-testid="change-password-modal"]')
+    password_modal.wait_for()
+    password_modal.locator('input[name="current_password"]').fill(
+        "strong-password-123"
+    )
+    password_modal.locator('input[name="new_password"]').fill(
+        "new-strong-password-456"
+    )
+    password_modal.locator('input[name="confirm_password"]').fill(
+        "new-strong-password-456"
+    )
+    password_modal.get_by_role("button", name="Change password", exact=True).click()
+    page.get_by_text("Password changed. Other sessions were signed out.").wait_for()
+    page.locator('[data-testid="settings-page"]').wait_for()
+
     # The tester checklist now lives at the bottom of Settings, not the quick menu.
     page.locator('[data-action="qa-status"]').click()
     qa_page = page.locator('[data-testid="qa-page"]')
@@ -197,6 +217,21 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     qa_page.get_by_text("Mockup alignment").wait_for()
     qa_page.get_by_text("Known limitations").wait_for()
     qa_page.get_by_text("How to send feedback").wait_for()
+
+    page.locator('[data-tab="settings"]').first.click()
+    page.locator("#logout-all-devices").click()
+    logout_modal = page.locator('[data-testid="logout-all-modal"]')
+    logout_modal.wait_for()
+    logout_modal.locator('input[name="current_password"]').fill(
+        "new-strong-password-456"
+    )
+    logout_modal.get_by_role(
+        "button", name="Log out all devices", exact=True
+    ).click()
+    page.locator('[data-testid="auth-form"]').wait_for()
+    page.get_by_text(
+        "All devices were logged out. Sign in again to continue."
+    ).wait_for()
 
     context.close()
 
@@ -245,5 +280,46 @@ def test_mobile_settings_uses_full_viewport_and_real_profile_editor(live_server,
     assert metrics["mobileNav"] == {"left": 0, "width": metrics["innerWidth"]}
     assert "Edit" not in metrics["settingsActions"]
     assert metrics["hasProfileForm"]
+    assert page.locator("#change-password").is_visible()
+    assert page.locator("#logout-all-devices").is_visible()
+
+    context.close()
+
+
+def test_expired_stored_session_returns_user_to_login(live_server, browser):
+    context = browser.new_context()
+    page = context.new_page()
+    email = f"expired-{uuid.uuid4().hex}@example.com"
+    registered = page.request.post(
+        f"{live_server}/auth/register",
+        data={
+            "email": email,
+            "password": "strong-password-123",
+            "user_name": "Expired Session Tester",
+        },
+    )
+    assert registered.ok
+    auth = registered.json()
+    auth["access_token"] = jwt.encode(
+        {
+            "sub": auth["user_id"],
+            "ver": 1,
+            "purpose": "access",
+            "iat": datetime.now(timezone.utc) - timedelta(days=2),
+            "exp": datetime.now(timezone.utc) - timedelta(minutes=1),
+        },
+        settings.JWT_SECRET_KEY,
+        algorithm=settings.JWT_ALGORITHM,
+    )
+
+    page.goto(live_server)
+    page.evaluate(
+        "auth => localStorage.setItem('blidx_auth', JSON.stringify(auth))", auth
+    )
+    page.reload()
+
+    page.locator('[data-testid="auth-form"]').wait_for()
+    page.get_by_text("Your session expired. Please sign in again.").wait_for()
+    assert page.evaluate("localStorage.getItem('blidx_auth')") is None
 
     context.close()

@@ -87,3 +87,21 @@ def test_production_configuration_requires_linkedin_identity_and_posting_scopes(
     assert "LINKEDIN_SCOPES must include openid, profile, and w_member_social" in (
         production_configuration_errors(unsafe)
     )
+
+
+def test_production_configuration_rejects_disabled_login_protection():
+    unsafe = production_settings(
+        ACCESS_TOKEN_EXPIRE_MINUTES=0,
+        AUTH_MAX_FAILED_ATTEMPTS=0,
+        AUTH_LOCKOUT_MINUTES=0,
+        LOGIN_RATE_LIMIT_ATTEMPTS=0,
+        LOGIN_RATE_LIMIT_WINDOW_SECONDS=0,
+    )
+
+    errors = production_configuration_errors(unsafe)
+
+    assert "ACCESS_TOKEN_EXPIRE_MINUTES must be greater than zero" in errors
+    assert "AUTH_MAX_FAILED_ATTEMPTS must be greater than zero" in errors
+    assert "AUTH_LOCKOUT_MINUTES must be greater than zero" in errors
+    assert "LOGIN_RATE_LIMIT_ATTEMPTS must be greater than zero" in errors
+    assert "LOGIN_RATE_LIMIT_WINDOW_SECONDS must be greater than zero" in errors

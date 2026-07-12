@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = DEFAULT_JWT_SECRET_KEY
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    AUTH_MAX_FAILED_ATTEMPTS: int = 8
+    AUTH_LOCKOUT_MINUTES: int = 15
+    LOGIN_RATE_LIMIT_ATTEMPTS: int = 20
+    LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 300
 
     ANTHROPIC_API_KEY: str | None = None
     ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
@@ -63,6 +67,16 @@ def production_configuration_errors(config: Settings = settings) -> list[str]:
         errors.append(
             "JWT_SECRET_KEY must be a unique value of at least 32 characters"
         )
+    positive_security_values = {
+        "ACCESS_TOKEN_EXPIRE_MINUTES": config.ACCESS_TOKEN_EXPIRE_MINUTES,
+        "AUTH_MAX_FAILED_ATTEMPTS": config.AUTH_MAX_FAILED_ATTEMPTS,
+        "AUTH_LOCKOUT_MINUTES": config.AUTH_LOCKOUT_MINUTES,
+        "LOGIN_RATE_LIMIT_ATTEMPTS": config.LOGIN_RATE_LIMIT_ATTEMPTS,
+        "LOGIN_RATE_LIMIT_WINDOW_SECONDS": config.LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+    }
+    for name, value in positive_security_values.items():
+        if value <= 0:
+            errors.append(f"{name} must be greater than zero")
 
     linkedin_values = [config.LINKEDIN_CLIENT_ID, config.LINKEDIN_CLIENT_SECRET]
     if any(linkedin_values) and not all(linkedin_values):

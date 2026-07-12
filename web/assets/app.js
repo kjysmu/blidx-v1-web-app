@@ -61,7 +61,20 @@ const api = async (path, options = {}) => {
     ...options,
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.detail || payload.message || "Request failed");
+  if (!response.ok) {
+    const detail = payload.detail;
+    const message = typeof detail === "string"
+      ? detail
+      : detail?.message || payload.message || "Request failed";
+    const error = new Error(message);
+    error.status = response.status;
+    error.code = typeof detail === "object" ? detail?.code : null;
+    error.retryAfter = Number(response.headers.get("Retry-After") || 0);
+    if (response.status === 401 && ui.auth && !["/auth/login", "/auth/register"].includes(path)) {
+      endSession(message || "Your session ended. Please sign in again.");
+    }
+    throw error;
+  }
   return payload;
 };
 
@@ -235,8 +248,8 @@ function renderAuth() {
       ${ui.authError ? `<div class="notice error">${escapeHtml(ui.authError)}</div>` : ""}
       <form id="auth-form" data-testid="auth-form">
         ${isSignup ? '<div class="field"><label>Name</label><input class="input" name="user_name" placeholder="Jae" /></div>' : ""}
-        <div class="field"><label>Email</label><input class="input" name="email" type="email" required placeholder="you@example.com" /></div>
-        <div class="field"><label>Password</label><input class="input" name="password" type="password" required minlength="${isSignup ? 8 : 1}" placeholder="••••••••" /></div>
+        <div class="field"><label>Email</label><input class="input" name="email" type="email" autocomplete="email" required placeholder="you@example.com" /></div>
+        <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="${isSignup ? "new-password" : "current-password"}" required minlength="${isSignup ? 8 : 1}" maxlength="128" placeholder="••••••••" /></div>
         <button class="button" data-testid="auth-submit" style="width:100%" ${ui.authSubmitting ? "disabled" : ""}>${ui.authSubmitting ? "Checking..." : isSignup ? "Create account" : "Log in"}</button>
       </form>
       <button class="button ghost auth-switch" id="toggle-auth" data-testid="auth-toggle">${isSignup ? "Already have an account? Log in" : "New here? Create account"}</button>
@@ -1261,8 +1274,8 @@ function qaChecks() {
       flow: "Auth / workspace",
       status: ui.state.auth?.authenticated ? "Testable" : ui.demoMode ? "Demo mode" : "Needs login",
       done: Boolean(ui.state.auth?.authenticated || ui.demoMode),
-      detail: ui.state.auth?.authenticated ? "Signed-in workspace is active." : "Public demo mode is available; production auth hardening is still separate.",
-      next: "Create account, log out, then log back in.",
+      detail: ui.state.auth?.authenticated ? "Signed-in workspace is active with password and session controls." : "Public demo mode is available; sign in to test account security.",
+      next: "Change the password, verify the current device stays signed in, then test Log out all devices.",
       tab: "settings",
     },
     {
@@ -1318,11 +1331,11 @@ function qaChecks() {
       status: linkedin?.connected ? "Connected" : linkedin?.configured ? "OAuth pending" : "Fallback only",
       done: Boolean(linkedin?.connected || linkedin?.configured),
       detail: linkedin?.connected
-        ? "OAuth connection is active for this session."
+        ? "OAuth connection is active for this Blidx account."
         : linkedin?.configured
           ? "Credentials exist; redirect/app access still controls final OAuth posting."
           : "Manual copy/open fallback is the safe test path.",
-      next: "Use Copy & open LinkedIn, then choose Not yet or Mark posted.",
+      next: linkedin?.connected ? "Publish an approved draft directly to LinkedIn." : "Connect LinkedIn once, or test the manual copy/open fallback.",
       tab: hasLibrary ? "library" : "chat",
     },
     {
@@ -1365,15 +1378,15 @@ function renderQA() {
   const mockupChecks = [
     ["Flow 1 · Onboarding", "Partly aligned", "Questionnaire exists; payment and pre-signup localStorage handoff are still deferred."],
     ["Flow 2 · Draft", "Partly aligned", "Mira chat, angle choice, draft card, edit/save/approve exist; upload document and SSE activity stream are still deferred."],
-    ["Flow 3 · LinkedIn", "Partly aligned", "OAuth helpers and manual fallback exist; final auto-posting depends on LinkedIn Developer redirect/app access."],
+    ["Flow 3 · LinkedIn", "Partly aligned", "Account-bound OAuth publishing and manual fallback work; richer post formats are still deferred."],
     ["Flow 4 · Check-in / Bank", "Partly aligned", "Daily check-in categories and Content Bank management exist; document/link capture is still MVP-level."],
     ["Flow 5 · Settings", "Partly aligned", "Settings now follows the handoff section order; exact bottom-sheet edit panels are still deferred."],
     ["Flows 6-8 · Library/Calendar/Progress", "Partly aligned", "Library, Calendar, Analytics exist; detailed post-performance analytics are still limited."],
     ["Navigation", "Aligned", "Bottom tabs are Chat, Bank, Library, Calendar, Settings. Plus menu contains Draft, Daily check-in, Progress, and QA."],
   ];
   const knownLimitations = [
-    "LinkedIn auto-posting still depends on LinkedIn Developer redirect/app access. Manual fallback is the reliable test path for now.",
-    "Auth is staging-level. Password reset, email verification, account recovery, and production security hardening are not complete yet.",
+    "Each user must authorize LinkedIn once before direct publishing. Manual fallback remains available when OAuth or publishing fails.",
+    "Change password, session revocation, expiry handling, and login throttling work. Email verification, forgot-password email, and account recovery are not complete yet.",
     "Mira now records voice ratings and draft decisions, but quality confidence grows only after testers provide real writing samples and feedback.",
     "The UI is more responsive and the navigation now matches the handoff structure, but exact screen-by-screen visual parity is still in progress.",
   ];
@@ -1411,7 +1424,7 @@ function renderQA() {
           "Open draft workspace, edit/save/approve/copy.",
           "Rate whether the draft sounds like you, then revise it if needed.",
           "Confirm Library and Calendar reflect the state change.",
-          "Use LinkedIn fallback and choose Not yet or Mark posted.",
+          "Publish through a connected LinkedIn account, or test the copy/open fallback.",
         ].map((item, index) => `<div class="check done"><span>${index + 1}</span>${escapeHtml(item)}</div>`).join("")}
       </div>
     </div>
@@ -1538,7 +1551,22 @@ function renderSettings() {
     <div class="settings-section">
       <div class="settings-header">Account</div>
       <div class="settings-group">
-        ${settingsRow("🔒", "gray", "Change password", "Password reset is not available yet")}
+        ${ui.auth ? `<div class="settings-row settings-action-row">
+          <div class="settings-row-icon gray">🔒</div>
+          <div class="settings-row-body">
+            <div class="settings-row-label">Change password</div>
+            <div class="settings-row-value">Update your password and revoke older sessions</div>
+          </div>
+          <button type="button" class="button ghost settings-inline-button" id="change-password">Change</button>
+        </div>
+        <div class="settings-row settings-action-row">
+          <div class="settings-row-icon red">↪</div>
+          <div class="settings-row-body">
+            <div class="settings-row-label">Log out all devices</div>
+            <div class="settings-row-value">Revoke every active Blidx session, including this one</div>
+          </div>
+          <button type="button" class="button danger settings-inline-button" id="logout-all-devices">Log out all</button>
+        </div>` : settingsRow("🔒", "gray", "Account security", "Sign in to change your password or manage sessions")}
         <div class="settings-row settings-action-row">
           <div class="settings-row-icon red">🗑</div>
           <div class="settings-row-body">
@@ -1577,6 +1605,10 @@ function bindView() {
   document.querySelector("#bank-form")?.addEventListener("submit", addMemory);
   document.querySelector("#profile-form")?.addEventListener("submit", saveProfile);
   document.querySelector("#reset-demo")?.addEventListener("click", resetDemo);
+  document.querySelector("#change-password")?.addEventListener("click", showChangePasswordModal);
+  document.querySelector("#logout-all-devices")?.addEventListener("click", showLogoutAllModal);
+  document.querySelector("#change-password-form")?.addEventListener("submit", changePassword);
+  document.querySelector("#logout-all-form")?.addEventListener("submit", logoutAllDevices);
   document.querySelector("#connect-linkedin")?.addEventListener("click", connectLinkedIn);
   document.querySelector("#disconnect-linkedin")?.addEventListener("click", disconnectLinkedIn);
   const chatGuide = document.querySelector("#chat-guide");
@@ -1682,12 +1714,6 @@ async function refresh() {
   if (ui.auth && state.auth && !state.auth.authenticated) {
     const sessionStillValid = await validateSession();
     if (!sessionStillValid) {
-      localStorage.removeItem("blidx_auth");
-      ui.auth = null;
-      ui.demoMode = false;
-      localStorage.removeItem("blidx_demo");
-      showToast("Session expired. Please log in again.");
-      render();
       return;
     }
     state.auth = { authenticated: true, user_id: ui.auth.user_id };
@@ -1702,7 +1728,8 @@ async function validateSession() {
     await api("/auth/me");
     return true;
   } catch (error) {
-    return false;
+    if (error.status === 401) return false;
+    throw error;
   }
 }
 
@@ -1723,8 +1750,11 @@ async function submitAuth(event) {
     await refresh();
     showToast(ui.authMode === "signup" ? "Workspace created" : "Logged in");
   } catch (error) {
-    ui.authError = error.message;
-    showToast(error.message);
+    const retryMessage = error.status === 429 && error.retryAfter
+      ? `${error.message} Try again in ${error.retryAfter} seconds.`
+      : error.message;
+    ui.authError = retryMessage;
+    showToast(retryMessage);
   } finally {
     ui.authSubmitting = false;
     render();
@@ -2147,6 +2177,79 @@ async function disconnectLinkedIn() {
   }
 }
 
+function showChangePasswordModal() {
+  ui.modal = `<div class="modal-backdrop"><div class="modal" data-testid="change-password-modal">
+    <div class="modal-head"><div><h3>Change password</h3><p class="muted small">This will revoke sessions on your other devices.</p></div><button type="button" class="icon-button" data-modal-close="true" aria-label="Close change password">Close</button></div>
+    <form id="change-password-form">
+      <div class="field"><label>Current password</label><input class="input" type="password" name="current_password" autocomplete="current-password" required maxlength="128" /></div>
+      <div class="field"><label>New password</label><input class="input" type="password" name="new_password" autocomplete="new-password" required minlength="8" maxlength="128" /></div>
+      <div class="field"><label>Confirm new password</label><input class="input" type="password" name="confirm_password" autocomplete="new-password" required minlength="8" maxlength="128" /></div>
+      <div class="modal-status" data-modal-status role="status" aria-live="polite"></div>
+      <div class="modal-actions"><button type="button" class="button ghost" data-modal-close="true">Cancel</button><button class="button" type="submit">Change password</button></div>
+    </form>
+  </div></div>`;
+  render();
+}
+
+async function changePassword(event) {
+  event.preventDefault();
+  const form = Object.fromEntries(new FormData(event.currentTarget).entries());
+  if (form.new_password !== form.confirm_password) {
+    showModalError("New passwords do not match.");
+    return;
+  }
+  if (form.current_password === form.new_password) {
+    showModalError("Choose a password different from your current one.");
+    return;
+  }
+  try {
+    setModalBusy(true, "Changing password…");
+    const auth = await api("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({
+        current_password: form.current_password,
+        new_password: form.new_password,
+      }),
+    });
+    ui.auth = auth;
+    localStorage.setItem("blidx_auth", JSON.stringify(auth));
+    ui.modal = null;
+    await refresh();
+    showToast("Password changed. Other sessions were signed out.");
+  } catch (error) {
+    setModalBusy(false);
+    showModalError(error.message);
+  }
+}
+
+function showLogoutAllModal() {
+  ui.modal = `<div class="modal-backdrop"><div class="modal" data-testid="logout-all-modal">
+    <div class="modal-head"><div><h3>Log out all devices?</h3><p class="muted small">Every active Blidx session will be revoked. You will need to sign in again here too.</p></div><button type="button" class="icon-button" data-modal-close="true" aria-label="Close log out all devices">Close</button></div>
+    <form id="logout-all-form">
+      <div class="field"><label>Confirm your current password</label><input class="input" type="password" name="current_password" autocomplete="current-password" required maxlength="128" /></div>
+      <div class="modal-status" data-modal-status role="status" aria-live="polite"></div>
+      <div class="modal-actions"><button type="button" class="button ghost" data-modal-close="true">Cancel</button><button class="button danger" type="submit">Log out all devices</button></div>
+    </form>
+  </div></div>`;
+  render();
+}
+
+async function logoutAllDevices(event) {
+  event.preventDefault();
+  const form = Object.fromEntries(new FormData(event.currentTarget).entries());
+  try {
+    setModalBusy(true, "Revoking sessions…");
+    await api("/auth/logout-all", {
+      method: "POST",
+      body: JSON.stringify({ current_password: form.current_password }),
+    });
+    endSession("All devices were logged out. Sign in again to continue.");
+  } catch (error) {
+    setModalBusy(false);
+    showModalError(error.message);
+  }
+}
+
 async function resetDemo() {
   await api("/api/reset", { method: "POST" });
   ui.notice = ""; ui.tab = "chat"; await refresh(); showToast(ui.auth ? "Workspace reset" : "Demo data reset");
@@ -2169,14 +2272,21 @@ function showToast(message, action = null) {
   ui.toastTimer = setTimeout(() => { ui.toast = ""; ui.toastAction = null; render(); }, action ? 6000 : 2200);
 }
 
-function logout() {
+function endSession(message = "") {
   ui.auth = null;
   ui.demoMode = false;
   ui.state = null;
   ui.integrations = null;
+  ui.modal = null;
+  ui.authMode = "login";
+  ui.authError = message;
   localStorage.removeItem("blidx_auth");
   localStorage.removeItem("blidx_demo");
   render();
+}
+
+function logout() {
+  endSession("");
 }
 
 refresh().catch((error) => layout(`<div class="page"><div class="notice">Could not load the app: ${escapeHtml(error.message)}</div></div>`));

@@ -793,6 +793,7 @@ button.settings-row-link:hover { background: #faf9ff; }
 }
 .settings-profile-intro p { margin: 5px 0 0; }
 .settings-action-row { align-items: center; }
+.settings-action-row .settings-row-value { white-space: normal; }
 .settings-inline-button {
   min-width: 82px; padding: 9px 12px; border-radius: 999px;
 }

@@ -29,6 +29,14 @@ services:
         value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "1440"
+      - key: AUTH_MAX_FAILED_ATTEMPTS
+        value: "8"
+      - key: AUTH_LOCKOUT_MINUTES
+        value: "15"
+      - key: LOGIN_RATE_LIMIT_ATTEMPTS
+        value: "20"
+      - key: LOGIN_RATE_LIMIT_WINDOW_SECONDS
+        value: "300"
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: ANTHROPIC_MODEL
