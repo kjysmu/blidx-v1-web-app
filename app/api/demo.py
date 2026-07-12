@@ -62,6 +62,9 @@ class ApprovePayload(BaseModel):
 
 class ChatPayload(BaseModel):
     message: str = Field(min_length=2)
+    # Optional short human label shown in the chat transcript while `message`
+    # (e.g. a full angle prompt) drives the actual processing.
+    display: str | None = Field(default=None, max_length=200)
 
 
 class LinkedInTrackPayload(BaseModel):
@@ -139,7 +142,7 @@ def create_draft(payload: DraftPayload) -> dict[str, Any]:
 
 @router.post("/chat/message")
 def chat_message(payload: ChatPayload) -> dict[str, Any]:
-    return demo_store.chat(payload.message)
+    return demo_store.chat(payload.message, display=payload.display)
 
 
 @router.post("/drafts/{draft_id}/edit")

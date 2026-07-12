@@ -303,13 +303,15 @@ class DemoStore:
             self._write(state)
             return deepcopy(post)
 
-    def chat(self, content: str) -> dict:
+    def chat(self, content: str, display: str | None = None) -> dict:
         content = content.strip()
         with self.lock:
             state = self._read()
             intent = self._detect_chat_intent(content)
             self._set_workflow(state, last_intent=intent)
-            self._append_message(state, "user", content)
+            # The transcript shows the short human label when one is provided;
+            # processing below always uses the full message.
+            self._append_message(state, "user", (display or content).strip())
             signal = self._signal_from_user_message(content)
             if signal:
                 self._record_signal(state, signal)
@@ -1460,12 +1462,68 @@ class DemoStore:
         return title
 
     @staticmethod
+    def _ensure_sentence(text: str) -> str:
+        """Interpolated memory text must end like a sentence, or paragraphs
+        run into each other without punctuation."""
+        text = text.strip()
+        if not text or text[-1] in ".!?…”\"'":
+            return text
+        return text + "."
+
+    @staticmethod
+    def _truncate_words(text: str, limit: int = 64) -> str:
+        text = text.strip()
+        if len(text) <= limit:
+            return text
+        cut = text[:limit].rsplit(" ", 1)[0]
+        return cut.rstrip(" ,;:—-–")
+
+    @staticmethod
+    def _draft_title(topic: str) -> str:
+        """Turn a drafting topic — which may be a verbose angle prompt — into a
+        clean human title that survives every surface it appears on."""
+        base = DemoStore._clean_topic(topic)
+        lowered = base.lower()
+        # Angle prompts wrap the real subject in scaffolding; unwrap it.
+        for prefix, stop in (
+            ("specific moment around ", ": what changed"),
+            ("founder pov on ", ": what most people"),
+            ("useful question about ", ": where the workflow"),
+        ):
+            if lowered.startswith(prefix):
+                base = base[len(prefix):]
+                stop_index = base.lower().find(stop)
+                if stop_index > 0:
+                    base = base[:stop_index]
+                break
+        else:
+            # Angle details usually quote the underlying moment — prefer it.
+            quoted = re.search(r"[“\"]([^”\"]{12,})[”\"]", base)
+            if quoted:
+                base = quoted.group(1)
+        # Diary-style lead-ins make weak titles.
+        changed = True
+        while changed:
+            changed = False
+            stripped = base.lower()
+            for lead in ("this week ", "today ", "yesterday ", "recently ", "last week ",
+                         "i realized ", "i noticed ", "i learned ", "i keep thinking about "):
+                if stripped.startswith(lead):
+                    base = base[len(lead):]
+                    changed = True
+                    break
+        base = DemoStore._truncate_words(base.strip(" .,:;—-–"))
+        if not base:
+            base = DemoStore._truncate_words(DemoStore._clean_topic(topic))
+        base = base[0].upper() + base[1:] if base else "Untitled draft"
+        return DemoStore._polish_title(base)
+
+    @staticmethod
     def _draft(state: dict, topic: str, source: str) -> dict:
         profile = state["profile"]
         topic = DemoStore._clean_topic(topic)
         memory = DemoStore._relevant_memory(state, topic)
         first_name = profile.get("first_name") or "there"
-        hook = topic.strip().rstrip(".")
         content, provider, error = DemoStore._generate_ai_draft(state, topic)
         if not content:
             content = DemoStore._fallback_draft_text(state, topic)
@@ -1483,10 +1541,7 @@ class DemoStore:
             sources.append({"type": "ai", "title": f"Generated with {provider}"})
 
         now = utc_now()
-        title = hook[:70].strip()
-        if title:
-            title = title[0].upper() + title[1:]
-            title = DemoStore._polish_title(title)
+        title = DemoStore._draft_title(topic)
         post = {
             "id": str(uuid.uuid4()),
             "title": title,
@@ -1790,7 +1845,7 @@ class DemoStore:
                 f"What does {hook} ask from us, beyond the technology?\n\n"
                 f"{anchor}: people do not only need access. "
                 "They need to feel seen, safe, and connected.\n\n"
-                f"A recent moment made this more concrete for me: {memory_text or 'I saw how quickly AI can make hard work feel more possible, and also how easily it can make human care feel abstract.'}\n\n"
+                f"A recent moment made this more concrete for me: {DemoStore._ensure_sentence(memory_text) or 'I saw how quickly AI can make hard work feel more possible, and also how easily it can make human care feel abstract.'}\n\n"
                 "That tension matters.\n\n"
                 "1/ AI can reduce friction.\n"
                 "2/ It can help founders move faster.\n"
@@ -1800,7 +1855,7 @@ class DemoStore:
                 f"{closing}"
             )
 
-        personal_block = memory_text or (
+        personal_block = DemoStore._ensure_sentence(memory_text) or (
             f"The interesting part is what {hook} changes about taste, judgment, and the way people decide what feels meaningful."
         )
         if style == "field_note":
@@ -1821,8 +1876,8 @@ class DemoStore:
             return (
                 f"{field_note_opener}\n\n"
                 f"{personal_block}\n\n"
-                "The obvious takeaway would be to write faster.\n\n"
-                "I think the better takeaway is quieter: protect the moment before it gets flattened into a generic opinion.\n\n"
+                "The obvious move would be to turn it into a neat lesson.\n\n"
+                "I think the better move is quieter: protect the moment before it gets flattened into a generic opinion.\n\n"
                 f"{company_line}\n\n"
                 f"For {audience}, the useful signal is rarely the polished conclusion. "
                 "It is the decision, doubt, conversation, or constraint that produced the conclusion.\n\n"

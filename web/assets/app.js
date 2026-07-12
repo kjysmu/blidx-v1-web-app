@@ -871,7 +871,7 @@ function angleActions(content = "") {
   if (!angles.length) return "";
   return `<div class="angle-actions">
     <div class="angle-actions-label">Turn an angle into a draft</div>
-    ${angles.map((angle, index) => `<button class="angle-action" data-testid="angle-action" data-angle-prompt="${escapeHtml(angle.prompt)}">
+    ${angles.map((angle, index) => `<button class="angle-action" data-testid="angle-action" data-angle-prompt="${escapeHtml(angle.prompt)}" data-angle-label="${escapeHtml(angle.title)}">
       <span>Draft angle ${index + 1}</span>
       <strong>${escapeHtml(angle.title)}</strong>
     </button>`).join("")}
@@ -1748,7 +1748,10 @@ function bindView() {
     button.onclick = () => submitPrompt(button.dataset.prompt);
   });
   document.querySelectorAll("[data-angle-prompt]").forEach((button) => {
-    button.onclick = () => submitPrompt(button.dataset.anglePrompt);
+    button.onclick = () => submitPrompt(
+      button.dataset.anglePrompt,
+      button.dataset.angleLabel ? `Draft it from the “${button.dataset.angleLabel}” angle` : null,
+    );
   });
   document.querySelectorAll("[data-category]").forEach((button) => {
     button.onclick = () => { ui.selectedCategory = button.dataset.category; render(); };
@@ -2066,19 +2069,19 @@ async function sendChatMessage(event) {
   await submitPrompt(message);
 }
 
-async function submitPrompt(message) {
+async function submitPrompt(message, display = null) {
   if (!message) return;
   ui.pendingMessages = [{
     id: `pending-${Date.now()}`,
     role: "user",
-    content: message,
+    content: display || message,
     created_at: new Date().toISOString(),
     kind: "pending",
   }];
   requestChatScroll();
   ui.loading = true; render();
   try {
-    const result = await api("/api/chat/message", { method: "POST", body: JSON.stringify({ message }) });
+    const result = await api("/api/chat/message", { method: "POST", body: JSON.stringify({ message, display }) });
     ui.state = result.state;
     ui.pendingMessages = [];
     ui.loading = false;

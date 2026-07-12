@@ -448,7 +448,10 @@ def test_mira_saves_memory_then_guides_angle_choice():
     draft_payload = draft_response.json()
     assert "draft_created" in draft_payload["actions"]
     assert draft_payload["post"]["status"] == "pending"
-    assert "Founder POV" in draft_payload["post"]["title"]
+    # Titles carry the founder's moment, not angle-prompt scaffolding,
+    # and stay short enough for cards, the Library, and the Calendar.
+    title = draft_payload["post"]["title"]
+    assert title == "I spoke with a founder who said AI writing is easy, but knowing"
     assert "angle 2" not in draft_payload["post"]["content"].lower()
 
     client.post("/api/reset")
