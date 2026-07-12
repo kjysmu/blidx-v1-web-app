@@ -7,6 +7,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from urllib.request import urlopen
 
 import pytest
@@ -52,6 +53,9 @@ def live_server():
             "ANTHROPIC_API_KEY": "",
             "USE_DATABASE_STORAGE": "false",
             "PYTHONPATH": str(ROOT_DIR),
+            "EMAIL_PROVIDER": "console",
+            "EMAIL_VERIFICATION_REQUIRED": "true",
+            "APP_BASE_URL": base_url,
         }
     )
     process = subprocess.Popen(
@@ -115,6 +119,23 @@ def fill_onboarding(page) -> None:
     page.locator("h1").filter(has_text=re.compile(r"^Good ")).wait_for()
 
 
+def sign_up_verify_and_login(page, email: str, name: str) -> None:
+    page.locator('[data-testid="auth-toggle"]').click()
+    page.locator('input[name="user_name"]').fill(name)
+    page.locator('input[name="email"]').fill(email)
+    page.locator('input[name="password"]').fill("strong-password-123")
+    page.locator('[data-testid="auth-submit"]').click()
+
+    page.locator('[data-testid="debug-account-link"]').wait_for()
+    page.locator('[data-testid="debug-account-link"]').click()
+    page.locator('[data-testid="auth-form"]').wait_for()
+    page.get_by_text("Email verified. You can now sign in.").wait_for()
+
+    page.locator('input[name="email"]').fill(email)
+    page.locator('input[name="password"]').fill("strong-password-123")
+    page.locator('[data-testid="auth-submit"]').click()
+
+
 def test_authenticated_golden_path_in_browser(live_server, browser):
     context = browser.new_context()
     page = context.new_page()
@@ -123,11 +144,7 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     email = f"browser-{uuid.uuid4().hex}@example.com"
     page.goto(live_server)
 
-    page.locator('[data-testid="auth-toggle"]').click()
-    page.locator('input[name="user_name"]').fill("Jae Browser")
-    page.locator('input[name="email"]').fill(email)
-    page.locator('input[name="password"]').fill("strong-password-123")
-    page.locator('[data-testid="auth-submit"]').click()
+    sign_up_verify_and_login(page, email, "Jae Browser")
 
     fill_onboarding(page)
 
@@ -187,6 +204,7 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     settings_page.get_by_text("LinkedIn", exact=True).first.wait_for()
     settings_page.get_by_text("Notifications", exact=True).wait_for()
     settings_page.get_by_text("Account", exact=True).wait_for()
+    settings_page.get_by_text("Email verified", exact=True).wait_for()
     settings_page.get_by_text("Mira profile details").wait_for()
     settings_page.get_by_text("Help & feedback", exact=True).wait_for()
     assert settings_page.get_by_text("System / staging", exact=True).count() == 0
@@ -248,11 +266,7 @@ def test_mobile_settings_uses_full_viewport_and_real_profile_editor(live_server,
     email = f"mobile-{uuid.uuid4().hex}@example.com"
     page.goto(live_server)
 
-    page.locator('[data-testid="auth-toggle"]').click()
-    page.locator('input[name="user_name"]').fill("Jae Mobile")
-    page.locator('input[name="email"]').fill(email)
-    page.locator('input[name="password"]').fill("strong-password-123")
-    page.locator('[data-testid="auth-submit"]').click()
+    sign_up_verify_and_login(page, email, "Jae Mobile")
 
     fill_onboarding(page)
 
@@ -282,6 +296,7 @@ def test_mobile_settings_uses_full_viewport_and_real_profile_editor(live_server,
     assert metrics["hasProfileForm"]
     assert page.locator("#change-password").is_visible()
     assert page.locator("#logout-all-devices").is_visible()
+    assert page.get_by_text("Email verified", exact=True).is_visible()
 
     context.close()
 
@@ -299,7 +314,20 @@ def test_expired_stored_session_returns_user_to_login(live_server, browser):
         },
     )
     assert registered.ok
-    auth = registered.json()
+    registration = registered.json()
+    verification_token = parse_qs(
+        urlparse(registration["debug_verification_url"]).fragment
+    )["verify_email"][0]
+    verified = page.request.post(
+        f"{live_server}/auth/verify-email", data={"token": verification_token}
+    )
+    assert verified.ok
+    logged_in = page.request.post(
+        f"{live_server}/auth/login",
+        data={"email": email, "password": "strong-password-123"},
+    )
+    assert logged_in.ok
+    auth = logged_in.json()
     auth["access_token"] = jwt.encode(
         {
             "sub": auth["user_id"],
@@ -321,5 +349,63 @@ def test_expired_stored_session_returns_user_to_login(live_server, browser):
     page.locator('[data-testid="auth-form"]').wait_for()
     page.get_by_text("Your session expired. Please sign in again.").wait_for()
     assert page.evaluate("localStorage.getItem('blidx_auth')") is None
+
+    context.close()
+
+
+def test_forgot_password_browser_flow_resets_password_and_revokes_old_login(
+    live_server, browser
+):
+    context = browser.new_context()
+    page = context.new_page()
+    email = f"browser-recovery-{uuid.uuid4().hex}@example.com"
+    old_password = "strong-password-123"
+    new_password = "browser-new-password-456"
+
+    registered = page.request.post(
+        f"{live_server}/auth/register",
+        data={
+            "email": email,
+            "password": old_password,
+            "user_name": "Browser Recovery",
+        },
+    )
+    registration = registered.json()
+    verification_token = parse_qs(
+        urlparse(registration["debug_verification_url"]).fragment
+    )["verify_email"][0]
+    assert page.request.post(
+        f"{live_server}/auth/verify-email", data={"token": verification_token}
+    ).ok
+
+    page.goto(live_server)
+    page.locator("#forgot-password").click()
+    forgot_form = page.locator('[data-testid="forgot-password-form"]')
+    forgot_form.wait_for()
+    forgot_form.locator('input[name="email"]').fill(email)
+    forgot_form.get_by_role("button", name="Send reset link").click()
+
+    page.locator('[data-testid="debug-account-link"]').wait_for()
+    page.locator('[data-testid="debug-account-link"]').click()
+    reset_form = page.locator('[data-testid="reset-password-form"]')
+    reset_form.wait_for()
+    reset_form.locator('input[name="new_password"]').fill(new_password)
+    reset_form.locator('input[name="confirm_password"]').fill(new_password)
+    reset_form.get_by_role("button", name="Reset password", exact=True).click()
+
+    page.locator('[data-testid="auth-form"]').wait_for()
+    page.get_by_text(
+        "Password reset complete. Sign in with your new password."
+    ).wait_for()
+    page.locator('input[name="email"]').fill(email)
+    page.locator('input[name="password"]').fill(new_password)
+    page.locator('[data-testid="auth-submit"]').click()
+    page.locator('[data-testid="onboarding-form"]').wait_for()
+
+    old_login = page.request.post(
+        f"{live_server}/auth/login",
+        data={"email": email, "password": old_password},
+    )
+    assert old_login.status == 401
 
     context.close()

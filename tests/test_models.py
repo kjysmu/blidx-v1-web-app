@@ -6,6 +6,7 @@ from app.models import Base, PostSource, PostStatus
 
 def test_final_v1_tables_are_registered():
     assert set(Base.metadata.tables) == {
+        "account_tokens",
         "users",
         "user_profiles",
         "content_bank",

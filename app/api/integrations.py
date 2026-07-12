@@ -10,6 +10,7 @@ from app.core.security import create_linkedin_oauth_state
 from app.demo_store import demo_store
 from app.demo_store import utc_now
 from app.integrations.linkedin import LinkedInClient, linkedin_share_url
+from app.services.email_service import email_service
 
 router = APIRouter(dependencies=[Depends(use_request_user)])
 
@@ -36,6 +37,11 @@ def integration_status() -> dict:
             "configured": bool(settings.DATABASE_URL),
             "persistent_auth": bool(settings.USE_DATABASE_STORAGE and settings.DATABASE_URL),
             "workspace_schema": "relational-v1" if settings.USE_DATABASE_STORAGE else "json-files",
+        },
+        "account_email": {
+            "configured": email_service.delivery_configured,
+            "provider": email_service.provider,
+            "verification_required": settings.EMAIL_VERIFICATION_REQUIRED,
         },
         "linkedin": {
             "configured": linkedin.configured,

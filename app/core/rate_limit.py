@@ -8,10 +8,24 @@ from app.core.config import settings
 
 
 class LoginRateLimiter:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        attempts_setting: str = "LOGIN_RATE_LIMIT_ATTEMPTS",
+        window_setting: str = "LOGIN_RATE_LIMIT_WINDOW_SECONDS",
+    ) -> None:
         self._attempts: dict[str, deque[float]] = {}
         self._lock = threading.Lock()
         self._last_cleanup = 0.0
+        self._attempts_setting = attempts_setting
+        self._window_setting = window_setting
+
+    @property
+    def attempts_limit(self) -> int:
+        return int(getattr(settings, self._attempts_setting))
+
+    @property
+    def window_seconds(self) -> int:
+        return int(getattr(settings, self._window_setting))
 
     @staticmethod
     def _email_key(email: str) -> str:
@@ -23,14 +37,13 @@ class LoginRateLimiter:
         digest = hashlib.sha256((client_ip or "unknown").encode("utf-8")).hexdigest()
         return f"ip:{digest}"
 
-    @staticmethod
-    def _prune(attempts: deque[float], now: float) -> None:
-        cutoff = now - settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS
+    def _prune(self, attempts: deque[float], now: float) -> None:
+        cutoff = now - self.window_seconds
         while attempts and attempts[0] <= cutoff:
             attempts.popleft()
 
     def _cleanup_locked(self, now: float) -> None:
-        cleanup_interval = min(60, settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS)
+        cleanup_interval = min(60, self.window_seconds)
         if now - self._last_cleanup < cleanup_interval:
             return
         for key, attempts in list(self._attempts.items()):
@@ -49,10 +62,8 @@ class LoginRateLimiter:
                 if not attempts:
                     continue
                 self._prune(attempts, now)
-                if len(attempts) >= settings.LOGIN_RATE_LIMIT_ATTEMPTS:
-                    remaining = settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS - (
-                        now - attempts[0]
-                    )
+                if len(attempts) >= self.attempts_limit:
+                    remaining = self.window_seconds - (now - attempts[0])
                     retry_after = max(retry_after, max(1, math.ceil(remaining)))
         return retry_after
 
@@ -76,3 +87,7 @@ class LoginRateLimiter:
 
 
 login_rate_limiter = LoginRateLimiter()
+account_email_rate_limiter = LoginRateLimiter(
+    "ACCOUNT_EMAIL_RATE_LIMIT_ATTEMPTS",
+    "ACCOUNT_EMAIL_RATE_LIMIT_WINDOW_SECONDS",
+)

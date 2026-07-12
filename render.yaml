@@ -37,6 +37,26 @@ services:
         value: "20"
       - key: LOGIN_RATE_LIMIT_WINDOW_SECONDS
         value: "300"
+      - key: ACCOUNT_EMAIL_RATE_LIMIT_ATTEMPTS
+        value: "5"
+      - key: ACCOUNT_EMAIL_RATE_LIMIT_WINDOW_SECONDS
+        value: "900"
+      - key: ACCOUNT_TOKEN_RESEND_COOLDOWN_SECONDS
+        value: "60"
+      - key: EMAIL_PROVIDER
+        value: disabled
+      - key: EMAIL_VERIFICATION_REQUIRED
+        value: "false"
+      - key: EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES
+        value: "1440"
+      - key: PASSWORD_RESET_TOKEN_EXPIRE_MINUTES
+        value: "30"
+      - key: APP_BASE_URL
+        value: https://blidx-v1-web-app.onrender.com
+      - key: EMAIL_FROM
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: ANTHROPIC_MODEL

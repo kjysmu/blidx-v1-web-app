@@ -1,6 +1,10 @@
 const app = document.querySelector("#app");
 
-const linkedinCallback = new URLSearchParams(window.location.search).get("linkedin");
+const initialParams = new URLSearchParams(window.location.search);
+const initialFragmentParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+const linkedinCallback = initialParams.get("linkedin");
+const initialVerificationToken = initialFragmentParams.get("verify_email") || initialParams.get("verify_email");
+const initialResetToken = initialFragmentParams.get("reset_password") || initialParams.get("reset_password");
 const linkedinCallbackMessages = {
   connected: "LinkedIn connected to this Blidx account.",
   cancelled: "LinkedIn connection was cancelled.",
@@ -13,9 +17,16 @@ const linkedinCallbackMessages = {
   token_error: "LinkedIn did not return a usable connection token.",
   failed: "LinkedIn connection failed. Please try again or use the manual posting fallback.",
 };
-if (linkedinCallback) {
+if (linkedinCallback || initialVerificationToken || initialResetToken) {
   window.history.replaceState({}, "", window.location.pathname);
 }
+
+window.addEventListener("hashchange", () => {
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  if (params.get("verify_email") || params.get("reset_password")) {
+    window.location.reload();
+  }
+});
 
 const ui = {
   tab: linkedinCallback ? "settings" : "chat",
@@ -23,9 +34,14 @@ const ui = {
   integrations: null,
   auth: JSON.parse(localStorage.getItem("blidx_auth") || "null"),
   demoMode: localStorage.getItem("blidx_demo") === "true",
-  authMode: "login",
+  authMode: initialResetToken ? "reset" : "login",
   authError: "",
+  authNotice: "",
   authSubmitting: false,
+  pendingEmail: "",
+  accountToken: initialResetToken || "",
+  authEmailPurpose: "",
+  debugActionUrl: "",
   selectedCategory: "insights",
   libraryFilter: "all",
   librarySearch: "",
@@ -44,6 +60,15 @@ const ui = {
   reviewDraftId: null,
   expandedLibraryPosts: new Set(),
 };
+
+if (initialResetToken || initialVerificationToken) {
+  if (initialResetToken) {
+    ui.auth = null;
+    localStorage.removeItem("blidx_auth");
+  }
+  ui.demoMode = false;
+  localStorage.removeItem("blidx_demo");
+}
 
 // Safety net for async handlers without their own catch: surface the error
 // as a toast and unstick any busy state instead of failing silently.
@@ -230,11 +255,18 @@ function layout(content) {
 
 function renderAuth() {
   const isSignup = ui.authMode === "signup";
+  const titles = {
+    login: "Welcome back to Blidx.",
+    signup: "Create your Blidx workspace.",
+    forgot: "Recover your Blidx account.",
+    reset: "Choose a new password.",
+    "email-sent": "Check your email.",
+  };
   return `<main class="auth-page">
     <section class="auth-hero">
       <div class="brand auth-brand"><span class="brand-mark">B</span> Blidx</div>
       <div class="eyebrow">Mira · first GTM agent</div>
-      <h1>${isSignup ? "Create your Blidx workspace." : "Welcome back to Blidx."}</h1>
+      <h1>${titles[ui.authMode] || titles.login}</h1>
       <p class="lead">Sign in to keep your own profile, Content Bank, drafts, and LinkedIn workflow separate from the public demo.</p>
       <div class="auth-points">
         <div><strong>1/ Private workspace</strong><span>Your drafts and memories stay under your account.</span></div>
@@ -243,26 +275,79 @@ function renderAuth() {
       </div>
     </section>
     <section class="auth-card">
-      <h2>${isSignup ? "Sign up" : "Log in"}</h2>
-      <p class="muted">${isSignup ? "Use at least 8 characters for the password." : "Use the email and password you registered with."}</p>
-      ${ui.authError ? `<div class="notice error">${escapeHtml(ui.authError)}</div>` : ""}
-      <form id="auth-form" data-testid="auth-form">
-        ${isSignup ? '<div class="field"><label>Name</label><input class="input" name="user_name" placeholder="Jae" /></div>' : ""}
-        <div class="field"><label>Email</label><input class="input" name="email" type="email" autocomplete="email" required placeholder="you@example.com" /></div>
-        <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="${isSignup ? "new-password" : "current-password"}" required minlength="${isSignup ? 8 : 1}" maxlength="128" placeholder="••••••••" /></div>
-        <button class="button" data-testid="auth-submit" style="width:100%" ${ui.authSubmitting ? "disabled" : ""}>${ui.authSubmitting ? "Checking..." : isSignup ? "Create account" : "Log in"}</button>
-      </form>
-      <button class="button ghost auth-switch" id="toggle-auth" data-testid="auth-toggle">${isSignup ? "Already have an account? Log in" : "New here? Create account"}</button>
-      <button class="button secondary auth-switch" id="continue-demo">Continue with public demo</button>
+      ${renderAuthCard(isSignup)}
     </section>
   </main>`;
 }
 
+function authMessages() {
+  return `${ui.authNotice ? `<div class="notice">${escapeHtml(ui.authNotice)}</div>` : ""}${ui.authError ? `<div class="notice error">${escapeHtml(ui.authError)}</div>` : ""}`;
+}
+
+function renderAuthCard(isSignup) {
+  if (ui.authMode === "forgot") {
+    return `<h2>Forgot password</h2>
+      <p class="muted">Enter your account email. The response is the same whether or not an account exists.</p>
+      ${authMessages()}
+      <form id="forgot-password-form" data-testid="forgot-password-form">
+        <div class="field"><label>Email</label><input class="input" name="email" type="email" autocomplete="email" required value="${escapeHtml(ui.pendingEmail)}" placeholder="you@example.com" /></div>
+        <button class="button" style="width:100%" ${ui.authSubmitting ? "disabled" : ""}>${ui.authSubmitting ? "Sending..." : "Send reset link"}</button>
+      </form>
+      <button class="button ghost auth-switch" data-auth-mode="login">Back to login</button>`;
+  }
+
+  if (ui.authMode === "reset") {
+    return `<h2>Reset password</h2>
+      <p class="muted">Choose at least 8 characters. All existing Blidx sessions will be revoked.</p>
+      ${authMessages()}
+      <form id="reset-password-form" data-testid="reset-password-form">
+        <div class="field"><label>New password</label><input class="input" name="new_password" type="password" autocomplete="new-password" required minlength="8" maxlength="128" /></div>
+        <div class="field"><label>Confirm new password</label><input class="input" name="confirm_password" type="password" autocomplete="new-password" required minlength="8" maxlength="128" /></div>
+        <button class="button" style="width:100%" ${ui.authSubmitting ? "disabled" : ""}>${ui.authSubmitting ? "Resetting..." : "Reset password"}</button>
+      </form>
+      <button class="button ghost auth-switch" data-auth-mode="login">Back to login</button>`;
+  }
+
+  if (ui.authMode === "email-sent") {
+    const verification = ui.authEmailPurpose === "verification";
+    const detail = verification
+      ? `We sent a verification link to ${ui.pendingEmail || "your email"}. Verify it before logging in.`
+      : `If an account exists for ${ui.pendingEmail || "that email"}, a password reset link is on its way.`;
+    return `<h2>Check your email</h2>
+      <p class="muted">${escapeHtml(detail)}</p>
+      ${authMessages()}
+      ${ui.debugActionUrl ? `<a class="button auth-debug-link" data-testid="debug-account-link" href="${escapeHtml(ui.debugActionUrl)}">Open local test link</a>` : ""}
+      ${verification ? `<button class="button secondary auth-switch" id="resend-verification" ${ui.authSubmitting ? "disabled" : ""}>Resend verification email</button>` : `<button class="button secondary auth-switch" data-auth-mode="forgot">Try again</button>`}
+      <button class="button ghost auth-switch" data-auth-mode="login">Back to login</button>`;
+  }
+
+  return `<h2>${isSignup ? "Sign up" : "Log in"}</h2>
+    <p class="muted">${isSignup ? "Use at least 8 characters for the password." : "Use the email and password you registered with."}</p>
+    ${authMessages()}
+    <form id="auth-form" data-testid="auth-form">
+      ${isSignup ? '<div class="field"><label>Name</label><input class="input" name="user_name" autocomplete="name" placeholder="Jae" /></div>' : ""}
+      <div class="field"><label>Email</label><input class="input" name="email" type="email" autocomplete="email" required placeholder="you@example.com" /></div>
+      <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="${isSignup ? "new-password" : "current-password"}" required minlength="${isSignup ? 8 : 1}" maxlength="128" placeholder="••••••••" /></div>
+      <button class="button" data-testid="auth-submit" style="width:100%" ${ui.authSubmitting ? "disabled" : ""}>${ui.authSubmitting ? "Checking..." : isSignup ? "Create account" : "Log in"}</button>
+    </form>
+    ${!isSignup ? '<button class="auth-text-link" id="forgot-password">Forgot password?</button>' : ""}
+    <button class="button ghost auth-switch" id="toggle-auth" data-testid="auth-toggle">${isSignup ? "Already have an account? Log in" : "New here? Create account"}</button>
+    <button class="button secondary auth-switch" id="continue-demo">Continue with public demo</button>`;
+}
+
 function bindAuth() {
   document.querySelector("#auth-form")?.addEventListener("submit", submitAuth);
+  document.querySelector("#forgot-password-form")?.addEventListener("submit", forgotPassword);
+  document.querySelector("#reset-password-form")?.addEventListener("submit", resetPassword);
+  document.querySelector("#resend-verification")?.addEventListener("click", resendVerification);
+  document.querySelector("#forgot-password")?.addEventListener("click", () => setAuthMode("forgot"));
+  document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+    button.onclick = () => setAuthMode(button.dataset.authMode);
+  });
   document.querySelector("#toggle-auth")?.addEventListener("click", () => {
     ui.authMode = ui.authMode === "login" ? "signup" : "login";
     ui.authError = "";
+    ui.authNotice = "";
     render();
   });
   document.querySelector("#continue-demo")?.addEventListener("click", async () => {
@@ -270,6 +355,15 @@ function bindAuth() {
     localStorage.setItem("blidx_demo", "true");
     await refresh();
   });
+}
+
+function setAuthMode(mode) {
+  ui.authMode = mode;
+  ui.authError = "";
+  ui.authNotice = "";
+  ui.debugActionUrl = "";
+  if (mode !== "reset") ui.accountToken = "";
+  render();
 }
 
 function accountLabel() {
@@ -1265,6 +1359,7 @@ function qaChecks() {
   const posts = ui.state.posts || [];
   const bank = ui.state.content_bank || [];
   const linkedin = ui.integrations?.linkedin;
+  const accountEmail = ui.integrations?.account_email;
   const hasPending = posts.some((post) => post.status === "pending");
   const hasLibrary = posts.some((post) => post.status !== "deleted");
   const hasScheduled = posts.some((post) => post.status === "scheduled" || post.status === "published");
@@ -1276,6 +1371,18 @@ function qaChecks() {
       done: Boolean(ui.state.auth?.authenticated || ui.demoMode),
       detail: ui.state.auth?.authenticated ? "Signed-in workspace is active with password and session controls." : "Public demo mode is available; sign in to test account security.",
       next: "Change the password, verify the current device stays signed in, then test Log out all devices.",
+      tab: "settings",
+    },
+    {
+      flow: "Email / recovery",
+      status: accountEmail?.configured ? "Email ready" : "Needs provider",
+      done: Boolean(accountEmail?.configured),
+      detail: accountEmail?.configured
+        ? "Verification, forgot-password, single-use reset links, and confirmation email are active."
+        : "The secure recovery flow is built, but this environment is not delivering email yet.",
+      next: accountEmail?.configured
+        ? "Log out, use Forgot password, reset it from email, then confirm old sessions are revoked."
+        : "Configure Resend in Render, then enable required email verification.",
       tab: "settings",
     },
     {
@@ -1386,7 +1493,7 @@ function renderQA() {
   ];
   const knownLimitations = [
     "Each user must authorize LinkedIn once before direct publishing. Manual fallback remains available when OAuth or publishing fails.",
-    "Change password, session revocation, expiry handling, and login throttling work. Email verification, forgot-password email, and account recovery are not complete yet.",
+    "Email verification and account recovery are implemented. Real delivery remains disabled until a verified Resend sender and API key are configured in Render.",
     "Mira now records voice ratings and draft decisions, but quality confidence grows only after testers provide real writing samples and feedback.",
     "The UI is more responsive and the navigation now matches the handoff structure, but exact screen-by-screen visual parity is still in progress.",
   ];
@@ -1519,6 +1626,8 @@ function settingsProfileForm(p) {
 function renderSettings() {
   const p = ui.state.profile;
   const linkedin = ui.integrations?.linkedin;
+  const emailVerified = ui.auth?.email_verified !== false;
+  const accountEmail = ui.auth?.email || "your account email";
   const linkedinBadge = linkedin?.connected ? "Connected" : linkedin?.configured ? "Ready to connect" : "Manual posting ready";
   const linkedinName = linkedin?.profile?.name || [linkedin?.profile?.given_name, linkedin?.profile?.family_name].filter(Boolean).join(" ");
   const linkedinDetail = linkedin?.connected
@@ -1552,6 +1661,14 @@ function renderSettings() {
       <div class="settings-header">Account</div>
       <div class="settings-group">
         ${ui.auth ? `<div class="settings-row settings-action-row">
+          <div class="settings-row-icon ${emailVerified ? "green" : "gray"}">${emailVerified ? "✓" : "@"}</div>
+          <div class="settings-row-body">
+            <div class="settings-row-label">Email ${emailVerified ? "verified" : "verification pending"}</div>
+            <div class="settings-row-value">${escapeHtml(accountEmail)}</div>
+          </div>
+          ${emailVerified ? '<span class="badge published">Verified</span>' : '<button type="button" class="button secondary settings-inline-button" id="resend-settings-verification">Resend</button>'}
+        </div>
+        <div class="settings-row settings-action-row">
           <div class="settings-row-icon gray">🔒</div>
           <div class="settings-row-body">
             <div class="settings-row-label">Change password</div>
@@ -1607,6 +1724,7 @@ function bindView() {
   document.querySelector("#reset-demo")?.addEventListener("click", resetDemo);
   document.querySelector("#change-password")?.addEventListener("click", showChangePasswordModal);
   document.querySelector("#logout-all-devices")?.addEventListener("click", showLogoutAllModal);
+  document.querySelector("#resend-settings-verification")?.addEventListener("click", resendSettingsVerification);
   document.querySelector("#change-password-form")?.addEventListener("submit", changePassword);
   document.querySelector("#logout-all-form")?.addEventListener("submit", logoutAllDevices);
   document.querySelector("#connect-linkedin")?.addEventListener("click", connectLinkedIn);
@@ -1738,26 +1856,183 @@ async function submitAuth(event) {
   const form = new FormData(event.currentTarget);
   const payload = Object.fromEntries(form.entries());
   const path = ui.authMode === "signup" ? "/auth/register" : "/auth/login";
+  const signingUp = ui.authMode === "signup";
   try {
     ui.authError = "";
+    ui.authNotice = "";
     ui.authSubmitting = true;
     render();
     const auth = await api(path, { method: "POST", body: JSON.stringify(payload) });
+    if (!auth.access_token) {
+      ui.pendingEmail = payload.email;
+      ui.authEmailPurpose = "verification";
+      ui.debugActionUrl = auth.debug_verification_url || "";
+      ui.authMode = "email-sent";
+      ui.authNotice = auth.delivery_configured
+        ? auth.message
+        : "Verification email delivery is not configured on this environment.";
+      return;
+    }
     ui.auth = auth;
     ui.demoMode = false;
     localStorage.setItem("blidx_auth", JSON.stringify(auth));
     localStorage.removeItem("blidx_demo");
     await refresh();
-    showToast(ui.authMode === "signup" ? "Workspace created" : "Logged in");
+    showToast(signingUp ? "Workspace created" : "Logged in");
   } catch (error) {
     const retryMessage = error.status === 429 && error.retryAfter
       ? `${error.message} Try again in ${error.retryAfter} seconds.`
       : error.message;
-    ui.authError = retryMessage;
-    showToast(retryMessage);
+    if (error.code === "email_not_verified") {
+      ui.pendingEmail = payload.email;
+      ui.authEmailPurpose = "verification";
+      ui.authMode = "email-sent";
+      ui.authNotice = "Your password is correct, but this email still needs verification.";
+      ui.authError = "";
+    } else {
+      ui.authError = retryMessage;
+      showToast(retryMessage);
+    }
   } finally {
     ui.authSubmitting = false;
     render();
+  }
+}
+
+async function forgotPassword(event) {
+  event.preventDefault();
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  try {
+    ui.authSubmitting = true;
+    ui.authError = "";
+    ui.authNotice = "";
+    render();
+    const result = await api("/auth/password/forgot", {
+      method: "POST",
+      body: JSON.stringify({ email: payload.email }),
+    });
+    ui.pendingEmail = payload.email;
+    ui.authEmailPurpose = "password_reset";
+    ui.debugActionUrl = result.debug_url || "";
+    ui.authMode = "email-sent";
+    ui.authNotice = result.delivery_configured
+      ? result.message
+      : "Password recovery email is not configured on this environment yet.";
+  } catch (error) {
+    ui.authError = error.status === 429 && error.retryAfter
+      ? `${error.message} Try again in ${error.retryAfter} seconds.`
+      : error.message;
+  } finally {
+    ui.authSubmitting = false;
+    render();
+  }
+}
+
+async function resendVerification() {
+  if (!ui.pendingEmail) {
+    setAuthMode("login");
+    return;
+  }
+  try {
+    ui.authSubmitting = true;
+    ui.authError = "";
+    render();
+    const result = await api("/auth/verification/resend", {
+      method: "POST",
+      body: JSON.stringify({ email: ui.pendingEmail }),
+    });
+    ui.debugActionUrl = result.debug_url || ui.debugActionUrl;
+    ui.authNotice = result.delivery_configured
+      ? result.message
+      : "Verification email delivery is not configured on this environment.";
+  } catch (error) {
+    ui.authError = error.status === 429 && error.retryAfter
+      ? `${error.message} Try again in ${error.retryAfter} seconds.`
+      : error.message;
+  } finally {
+    ui.authSubmitting = false;
+    render();
+  }
+}
+
+async function resetPassword(event) {
+  event.preventDefault();
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  if (payload.new_password !== payload.confirm_password) {
+    ui.authError = "New passwords do not match.";
+    render();
+    return;
+  }
+  if (!ui.accountToken) {
+    ui.authError = "This password reset link is missing or invalid.";
+    render();
+    return;
+  }
+  try {
+    ui.authSubmitting = true;
+    ui.authError = "";
+    render();
+    const result = await api("/auth/password/reset", {
+      method: "POST",
+      body: JSON.stringify({
+        token: ui.accountToken,
+        new_password: payload.new_password,
+      }),
+    });
+    ui.accountToken = "";
+    ui.authMode = "login";
+    ui.authNotice = result.message;
+    ui.authError = "";
+  } catch (error) {
+    ui.authError = error.message;
+  } finally {
+    ui.authSubmitting = false;
+    render();
+  }
+}
+
+async function resendSettingsVerification() {
+  if (!ui.auth?.email) return;
+  try {
+    const result = await api("/auth/verification/resend", {
+      method: "POST",
+      body: JSON.stringify({ email: ui.auth.email }),
+    });
+    if (result.debug_url) {
+      ui.modal = `<div class="modal-backdrop"><div class="modal"><div class="modal-head"><h3>Verification link ready</h3><button type="button" class="icon-button" data-modal-close="true">Close</button></div><p class="muted">Local test mode generated a verification link.</p><a class="button" href="${escapeHtml(result.debug_url)}">Open local test link</a></div></div>`;
+      render();
+    } else {
+      showToast(result.delivery_configured ? result.message : "Email delivery is not configured yet.");
+    }
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function processInitialVerification() {
+  if (!initialVerificationToken) return;
+  try {
+    const result = await api("/auth/verify-email", {
+      method: "POST",
+      body: JSON.stringify({ token: initialVerificationToken }),
+    });
+    if (ui.auth) {
+      ui.auth.email_verified = true;
+      localStorage.setItem("blidx_auth", JSON.stringify(ui.auth));
+      ui.notice = result.message;
+      ui.tab = "settings";
+    } else {
+      ui.authMode = "login";
+      ui.authNotice = result.message;
+    }
+  } catch (error) {
+    if (ui.auth) {
+      ui.notice = error.message;
+      ui.tab = "settings";
+    } else {
+      ui.authMode = "login";
+      ui.authError = error.message;
+    }
   }
 }
 
@@ -2280,6 +2555,7 @@ function endSession(message = "") {
   ui.modal = null;
   ui.authMode = "login";
   ui.authError = message;
+  ui.authNotice = "";
   localStorage.removeItem("blidx_auth");
   localStorage.removeItem("blidx_demo");
   render();
@@ -2289,4 +2565,9 @@ function logout() {
   endSession("");
 }
 
-refresh().catch((error) => layout(`<div class="page"><div class="notice">Could not load the app: ${escapeHtml(error.message)}</div></div>`));
+async function bootstrap() {
+  await processInitialVerification();
+  await refresh();
+}
+
+bootstrap().catch((error) => layout(`<div class="page"><div class="notice">Could not load the app: ${escapeHtml(error.message)}</div></div>`));

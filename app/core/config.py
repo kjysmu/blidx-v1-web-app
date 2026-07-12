@@ -22,6 +22,17 @@ class Settings(BaseSettings):
     AUTH_LOCKOUT_MINUTES: int = 15
     LOGIN_RATE_LIMIT_ATTEMPTS: int = 20
     LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 300
+    ACCOUNT_EMAIL_RATE_LIMIT_ATTEMPTS: int = 5
+    ACCOUNT_EMAIL_RATE_LIMIT_WINDOW_SECONDS: int = 900
+    ACCOUNT_TOKEN_RESEND_COOLDOWN_SECONDS: int = 60
+
+    EMAIL_PROVIDER: str = "disabled"
+    EMAIL_VERIFICATION_REQUIRED: bool = False
+    EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES: int = 1440
+    PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 30
+    APP_BASE_URL: str = "http://127.0.0.1:8000"
+    EMAIL_FROM: str = ""
+    RESEND_API_KEY: str | None = None
 
     ANTHROPIC_API_KEY: str | None = None
     ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
@@ -73,10 +84,40 @@ def production_configuration_errors(config: Settings = settings) -> list[str]:
         "AUTH_LOCKOUT_MINUTES": config.AUTH_LOCKOUT_MINUTES,
         "LOGIN_RATE_LIMIT_ATTEMPTS": config.LOGIN_RATE_LIMIT_ATTEMPTS,
         "LOGIN_RATE_LIMIT_WINDOW_SECONDS": config.LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+        "ACCOUNT_EMAIL_RATE_LIMIT_ATTEMPTS": (
+            config.ACCOUNT_EMAIL_RATE_LIMIT_ATTEMPTS
+        ),
+        "ACCOUNT_EMAIL_RATE_LIMIT_WINDOW_SECONDS": (
+            config.ACCOUNT_EMAIL_RATE_LIMIT_WINDOW_SECONDS
+        ),
+        "ACCOUNT_TOKEN_RESEND_COOLDOWN_SECONDS": (
+            config.ACCOUNT_TOKEN_RESEND_COOLDOWN_SECONDS
+        ),
+        "EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES": (
+            config.EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES
+        ),
+        "PASSWORD_RESET_TOKEN_EXPIRE_MINUTES": (
+            config.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES
+        ),
     }
     for name, value in positive_security_values.items():
         if value <= 0:
             errors.append(f"{name} must be greater than zero")
+
+    email_provider = config.EMAIL_PROVIDER.strip().lower()
+    if email_provider not in {"disabled", "resend"}:
+        errors.append("EMAIL_PROVIDER must be disabled or resend in production")
+    if email_provider == "resend":
+        if not config.RESEND_API_KEY:
+            errors.append("RESEND_API_KEY is required when EMAIL_PROVIDER is resend")
+        if not config.EMAIL_FROM.strip():
+            errors.append("EMAIL_FROM is required when EMAIL_PROVIDER is resend")
+        if not config.APP_BASE_URL.startswith("https://"):
+            errors.append("APP_BASE_URL must use HTTPS when email delivery is enabled")
+    if config.EMAIL_VERIFICATION_REQUIRED and email_provider != "resend":
+        errors.append(
+            "EMAIL_VERIFICATION_REQUIRED needs EMAIL_PROVIDER=resend in production"
+        )
 
     linkedin_values = [config.LINKEDIN_CLIENT_ID, config.LINKEDIN_CLIENT_SECRET]
     if any(linkedin_values) and not all(linkedin_values):

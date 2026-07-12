@@ -30,6 +30,19 @@ def initialize_database() -> None:
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP WITH TIME ZONE",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP WITH TIME ZONE",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP WITH TIME ZONE",
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'users' AND column_name = 'email_verified_at'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN email_verified_at TIMESTAMP WITH TIME ZONE;
+                    UPDATE users
+                    SET email_verified_at = COALESCE(created_at, CURRENT_TIMESTAMP);
+                END IF;
+            END $$
+            """,
         )
         with engine.begin() as connection:
             for statement in statements:

@@ -96,6 +96,11 @@ def test_production_configuration_rejects_disabled_login_protection():
         AUTH_LOCKOUT_MINUTES=0,
         LOGIN_RATE_LIMIT_ATTEMPTS=0,
         LOGIN_RATE_LIMIT_WINDOW_SECONDS=0,
+        ACCOUNT_EMAIL_RATE_LIMIT_ATTEMPTS=0,
+        ACCOUNT_EMAIL_RATE_LIMIT_WINDOW_SECONDS=0,
+        ACCOUNT_TOKEN_RESEND_COOLDOWN_SECONDS=0,
+        EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES=0,
+        PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=0,
     )
 
     errors = production_configuration_errors(unsafe)
@@ -105,3 +110,52 @@ def test_production_configuration_rejects_disabled_login_protection():
     assert "AUTH_LOCKOUT_MINUTES must be greater than zero" in errors
     assert "LOGIN_RATE_LIMIT_ATTEMPTS must be greater than zero" in errors
     assert "LOGIN_RATE_LIMIT_WINDOW_SECONDS must be greater than zero" in errors
+    assert "ACCOUNT_EMAIL_RATE_LIMIT_ATTEMPTS must be greater than zero" in errors
+    assert "ACCOUNT_EMAIL_RATE_LIMIT_WINDOW_SECONDS must be greater than zero" in errors
+    assert "ACCOUNT_TOKEN_RESEND_COOLDOWN_SECONDS must be greater than zero" in errors
+    assert "EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES must be greater than zero" in errors
+    assert "PASSWORD_RESET_TOKEN_EXPIRE_MINUTES must be greater than zero" in errors
+
+
+def test_production_email_verification_requires_resend_configuration():
+    unsafe = production_settings(
+        EMAIL_PROVIDER="console",
+        EMAIL_VERIFICATION_REQUIRED=True,
+        RESEND_API_KEY=None,
+        APP_BASE_URL="http://localhost:8000",
+    )
+
+    errors = production_configuration_errors(unsafe)
+
+    assert "EMAIL_PROVIDER must be disabled or resend in production" in errors
+    assert (
+        "EMAIL_VERIFICATION_REQUIRED needs EMAIL_PROVIDER=resend in production"
+        in errors
+    )
+
+
+def test_production_resend_configuration_is_accepted():
+    secure = production_settings(
+        EMAIL_PROVIDER="resend",
+        EMAIL_VERIFICATION_REQUIRED=True,
+        RESEND_API_KEY="resend-secret-key",
+        EMAIL_FROM="Blidx <security@blidx.example>",
+        APP_BASE_URL="https://app.blidx.example",
+    )
+
+    assert production_configuration_errors(secure) == []
+
+
+def test_production_resend_rejects_missing_sender_key_and_https_base_url():
+    unsafe = production_settings(
+        EMAIL_PROVIDER="resend",
+        RESEND_API_KEY=None,
+        EMAIL_FROM="",
+        APP_BASE_URL="http://app.blidx.example",
+    )
+
+    errors = production_configuration_errors(unsafe)
+
+    assert "RESEND_API_KEY is required when EMAIL_PROVIDER is resend" in errors
+    assert "EMAIL_FROM is required when EMAIL_PROVIDER is resend" in errors
+    assert "APP_BASE_URL must use HTTPS when email delivery is enabled" in errors

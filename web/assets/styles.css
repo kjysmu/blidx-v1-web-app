@@ -666,6 +666,12 @@ button.day:hover { border-color: #b8afe8; box-shadow: 0 4px 14px rgba(85,72,184,
 .auth-card h2 { font-family: "DM Serif Display"; font-size: 32px; font-weight: 400; margin-bottom: 8px; }
 .auth-card form { display: grid; gap: 15px; margin-top: 18px; }
 .auth-switch { width: 100%; margin-top: 10px; }
+.auth-text-link {
+  width: 100%; margin-top: 12px; border: 0; background: transparent;
+  color: var(--purple); font-weight: 800;
+}
+.auth-text-link:hover { color: var(--purple-dark); text-decoration: underline; }
+.auth-debug-link { display: block; width: 100%; margin-top: 14px; text-align: center; }
 .onboarding-page { max-width: 1020px; }
 .onboarding-hero {
   display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 18px;

@@ -93,6 +93,10 @@ POST /auth/login
 GET /auth/me
 POST /auth/change-password
 POST /auth/logout-all
+POST /auth/verification/resend
+POST /auth/verify-email
+POST /auth/password/forgot
+POST /auth/password/reset
 GET /profile
 POST /profile
 PUT /profile
@@ -130,6 +134,10 @@ Postgres workspace tables. Local development can still use JSON files by setting
   token to the current device. Users can also revoke every session, expired and
   revoked sessions return distinct errors, and login attempts are throttled by
   account and client address. Persistent account lockout state lives in Postgres.
+- Account recovery: email verification and password reset use random, hashed,
+  single-use tokens with expiration and resend cooldowns. A successful reset
+  invalidates every existing session and does not automatically log the user in.
+  Action tokens live in URL fragments so they are not sent to Render in request URLs.
 
 Login protection can be tuned with:
 
@@ -138,6 +146,9 @@ AUTH_MAX_FAILED_ATTEMPTS
 AUTH_LOCKOUT_MINUTES
 LOGIN_RATE_LIMIT_ATTEMPTS
 LOGIN_RATE_LIMIT_WINDOW_SECONDS
+ACCOUNT_EMAIL_RATE_LIMIT_ATTEMPTS
+ACCOUNT_EMAIL_RATE_LIMIT_WINDOW_SECONDS
+ACCOUNT_TOKEN_RESEND_COOLDOWN_SECONDS
 ```
 
 ### Required secrets
@@ -152,11 +163,35 @@ LINKEDIN_REDIRECT_URI
 LINKEDIN_TOKEN_ENCRYPTION_KEY
 ADMIN_USERNAME
 ADMIN_PASSWORD
+RESEND_API_KEY
 ```
 
 The LinkedIn Developer app must authorize the exact callback configured in
 `LINKEDIN_REDIRECT_URI`. For Render staging, that is currently
 `https://blidx-v1-web-app.onrender.com/auth/linkedin/callback`.
+
+### Account email delivery
+
+Local development can use the in-memory email outbox without network calls:
+
+```txt
+EMAIL_PROVIDER=console
+APP_BASE_URL=http://127.0.0.1:8000
+```
+
+To activate real verification and password-reset email on Render, configure:
+
+```txt
+EMAIL_PROVIDER=resend
+RESEND_API_KEY=<Render secret>
+EMAIL_FROM=Blidx <account@your-verified-domain>
+APP_BASE_URL=https://blidx-v1-web-app.onrender.com
+EMAIL_VERIFICATION_REQUIRED=true
+```
+
+Keep `EMAIL_VERIFICATION_REQUIRED=false` until a test message succeeds. The
+[Resend free plan](https://resend.com/pricing) is sufficient for early testing;
+the sender domain must be verified in Resend before Blidx can send to testers.
 
 ## Deploy to Render
 

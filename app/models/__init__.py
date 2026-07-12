@@ -1,4 +1,5 @@
 from app.core.database import Base
+from app.models.account_token import AccountToken
 from app.models.content_bank import ContentBankEntry
 from app.models.post import Post, PostSource, PostStatus
 from app.models.user import User
@@ -14,6 +15,7 @@ from app.models.workspace_data import (
 
 __all__ = [
     "Base",
+    "AccountToken",
     "ContentBankEntry",
     "Post",
     "PostSource",
