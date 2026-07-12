@@ -116,7 +116,7 @@ def fill_onboarding(page) -> None:
         "This week I tested a founder workflow and noticed the hard part is choosing what is worth saying."
     )
     page.locator('[data-testid="complete-onboarding"]').click()
-    page.locator("h1").filter(has_text=re.compile(r"^Good ")).wait_for()
+    page.locator('[data-testid="chat-message"]').wait_for()
 
 
 def sign_up_verify_and_login(page, email: str, name: str) -> None:
@@ -156,13 +156,29 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     page.get_by_text("Saved to Content Bank").wait_for()
 
     page.locator('[data-tab="chat"]').first.click()
-    page.locator('[data-testid="chat-message"]').fill("Give me 3 angles from my Content Bank")
+    chat_input = page.locator('[data-testid="chat-message"]')
+    assert chat_input.evaluate("(element) => element.tagName") == "TEXTAREA"
+    chat_input.fill("First line")
+    chat_input.press("Shift+Enter")
+    chat_input.type("Second line")
+    assert chat_input.input_value() == "First line\nSecond line"
+    chat_input.fill("Give me 3 angles from my Content Bank")
     page.locator('[data-testid="chat-send"]').click()
     page.locator('[data-testid="angle-action"]').first.wait_for(timeout=10000)
 
     page.locator('[data-testid="angle-action"]').first.click()
-    page.locator('[data-testid="draft-card"]').first.wait_for(timeout=10000)
+    draft_card = page.locator('[data-testid="draft-card"]').first
+    draft_card.wait_for(timeout=10000)
     page.get_by_text("Draft ready:").first.wait_for()
+    draft_meta = draft_card.locator(".draft-meta").inner_text()
+    assert "Created:" in draft_meta
+    assert "Suggested:" not in draft_meta
+
+    user_bubble_edges = page.locator(".msg.user .bubble").evaluate_all(
+        "(elements) => elements.map((element) => Math.round(element.getBoundingClientRect().right * 10) / 10)"
+    )
+    assert len(user_bubble_edges) >= 2
+    assert max(user_bubble_edges) - min(user_bubble_edges) <= 2
 
     page.locator('[data-testid="open-draft-workspace"]').first.click()
     draft_modal = page.locator('[data-testid="draft-review-modal"]')
@@ -272,6 +288,11 @@ def test_mobile_settings_uses_full_viewport_and_real_profile_editor(live_server,
     sign_up_verify_and_login(page, email, "Jae Mobile")
 
     fill_onboarding(page)
+
+    assert page.locator(".chat-page.has-activity .chat-heading").is_hidden()
+    assert page.locator('[data-testid="chat-message"]').evaluate(
+        "(element) => element.tagName"
+    ) == "TEXTAREA"
 
     page.locator('.mobile-nav [data-tab="settings"]').click()
     page.locator('[data-testid="settings-page"]').wait_for()

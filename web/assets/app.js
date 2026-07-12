@@ -57,6 +57,7 @@ const ui = {
   calendarOffset: 0,
   proactiveDismissed: false,
   pendingMessages: [],
+  chatComposerDraft: "",
   reviewDraftId: null,
   expandedLibraryPosts: new Set(),
 };
@@ -497,11 +498,12 @@ function closeQuickActions() {
 function startDraft() {
   ui.quickActionsOpen = false;
   ui.tab = "chat";
+  ui.chatComposerDraft = "Draft a post about ";
   render();
   setTimeout(() => {
     const input = document.querySelector("#chat-message");
     if (input) {
-      input.value = "Draft a post about ";
+      resizeChatComposer(input);
       input.focus();
     }
   }, 0);
@@ -717,36 +719,33 @@ function renderChat() {
   const timeline = chatTimeline(messages, activeDrafts);
   const hasActivity = ui.state.content_bank.length > 0
     || ui.state.posts.some((post) => post.status !== "deleted")
-    || (ui.state.messages?.length || 0) > 0;
+    || (ui.state.messages || []).some((message) => message.role === "user");
   const weekCards = `<div class="grid">
         <div class="card"><div class="card-head"><h3>This week</h3><span class="badge ${published >= goal ? "published" : "pending"}">${published}/${goal} posts</span></div><div class="metric">${Math.min(Math.round((published / goal) * 100), 100)}%</div><div class="progress"><span style="width:${Math.min((published / goal) * 100, 100)}%"></span></div><div class="muted small">Based on your ${escapeHtml(profile.posting_frequency.replaceAll("_", " "))} goal.</div></div>
         <div class="card"><div class="card-head"><h3>Content Bank</h3><span class="badge published">${ui.state.content_bank.length} entries</span></div><p class="muted">Your latest real-world context makes every draft more personal.</p><button class="button secondary" data-tab="bank">Add today’s insight</button></div>
       </div>`;
   const { completedCount, total } = goldenPathStats();
-  const intro = hasActivity
-    ? `${workflowProgress()}
+  const intro = `${hasActivity ? "" : `<p class="lead">Tell Mira one real thing that happened this week. She'll help you turn it into a LinkedIn post that actually sounds like you.</p>`}
+      ${workflowProgress()}
       <details class="chat-guide" id="chat-guide" ${ui.chatGuideOpen ? "open" : ""}>
         <summary>Workflow guide · ${completedCount}/${total} steps done · ${published}/${goal} posts this week</summary>
         <div class="chat-guide-body">${miraBrief()}${workflowGuide()}${weekCards}</div>
-      </details>`
-    : `<p class="lead">Tell Mira one real thing that happened this week. She'll help you turn it into a LinkedIn post that actually sounds like you.</p>
-      ${workflowProgress()}
-      ${miraBrief()}
-      ${workflowGuide()}
-      ${weekCards}`;
+      </details>`;
   return `
-    <section class="page">
-      <div class="eyebrow">Your content workdesk</div>
-      <h1>Good ${new Date().getHours() < 12 ? "morning" : "afternoon"}, ${escapeHtml(profile.first_name)}.</h1>
+    <section class="page chat-page ${hasActivity ? "has-activity" : "is-empty"} ${activeDrafts.length ? "has-active-draft" : ""}">
+      <div class="chat-heading">
+        <div class="eyebrow">Your content workdesk</div>
+        <h1>Good ${new Date().getHours() < 12 ? "morning" : "afternoon"}, ${escapeHtml(profile.first_name)}.</h1>
+      </div>
       ${intro}
-      <div class="chat-stream" data-testid="chat-stream" style="margin-top:18px">
+      <div class="chat-stream" data-testid="chat-stream" role="log" aria-live="polite" aria-relevant="additions text" style="margin-top:18px">
         ${timeline}
         ${proactiveBubble()}
         ${ui.loading ? `<div class="msg mira"><div class="msg-label">Mira</div><div class="msg-row">${miraAvatar(24)}<div class="bubble mira typing"><span class="typing-dots"><i></i><i></i><i></i></span>Thinking it through…</div></div></div>` : ""}
       </div>
       <div class="composer">
-        <form class="composer-box" id="chat-form">
-          <input class="input" id="chat-message" data-testid="chat-message" placeholder="Message Mira…" required minlength="2" />
+        <form class="composer-box" id="chat-form" aria-label="Message Mira">
+          <textarea class="input" id="chat-message" data-testid="chat-message" rows="1" placeholder="Message Mira…" aria-label="Message Mira" required minlength="2">${escapeHtml(ui.chatComposerDraft)}</textarea>
           <button class="button send-button" data-testid="chat-send" aria-label="Send message" ${ui.loading ? "disabled" : ""}>${icons.send}</button>
         </form>
         ${currentDraftShortcut(activeDrafts)}
@@ -913,11 +912,13 @@ function angleActions(content = "") {
   </div>`;
 }
 
-function suggestedLabel(value) {
+function draftTimingLabel(post) {
+  const value = post.scheduled_at || post.created_at;
   if (!value) return "";
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "";
-  return `Suggested: ${date.toLocaleDateString([], { weekday: "short" })} ${formatMessageTime(value)}`;
+  const prefix = post.scheduled_at ? "Scheduled" : "Created";
+  return `${prefix}: ${date.toLocaleDateString([], { weekday: "short" })} ${formatMessageTime(value)}`;
 }
 
 function draftCard(post, compact = true) {
@@ -925,7 +926,7 @@ function draftCard(post, compact = true) {
   const content = post.content || "";
   const excerpt = escapeHtml(stripMarkdown(content).slice(0, 220));
   return `<article class="draft-card compact" data-testid="draft-card" data-post="${post.id}">
-    <div class="draft-meta"><span class="draft-eyebrow">Draft post</span><span>${suggestedLabel(post.created_at)} · v${post.version} · ${post.char_count}/3,000</span></div>
+    <div class="draft-meta"><span class="draft-eyebrow">Draft post</span><span>${draftTimingLabel(post)} · v${post.version} · ${post.char_count}/3,000</span></div>
     <div class="draft-summary"><div><strong>Draft ready: ${escapeHtml(post.title || "Untitled draft")}</strong><p>${excerpt}${content.length > 220 ? "…" : ""}</p><button class="read-more" data-testid="open-draft-workspace" data-draft-review="${post.id}">Open draft workspace</button></div><span class="badge draft">pending review</span></div>
     <div class="draft-actions">
       <button class="button" data-testid="review-draft" data-draft-review="${post.id}">Review & edit</button>
@@ -942,11 +943,11 @@ function draftReviewModal() {
   const provider = post.generation_provider || "template";
   const publishLabel = ui.integrations?.linkedin?.connected ? "Publish to LinkedIn" : "Copy & open LinkedIn";
   return `<div class="modal-backdrop draft-review-backdrop">
-    <div class="modal draft-review-modal" data-testid="draft-review-modal">
+    <div class="modal draft-review-modal" data-testid="draft-review-modal" role="dialog" aria-modal="true" aria-labelledby="draft-review-title">
       <div class="draft-review-header">
         <div>
           <div class="eyebrow">Draft workspace</div>
-          <h3>${escapeHtml(post.title || "Untitled draft")}</h3>
+          <h3 id="draft-review-title">${escapeHtml(post.title || "Untitled draft")}</h3>
           <p class="muted small">Draft v${post.version} · ${escapeHtml(post.source?.replace("_", " ") || "chat")} · ${escapeHtml(provider)} · ${post.char_count} / 3,000</p>
         </div>
         <button class="icon-button" id="close-draft-review">Close</button>
@@ -1786,6 +1787,7 @@ function textAreaField(label, name, value, placeholder = "", full = false) {
 function bindView() {
   bindGlobal();
   document.querySelector("#chat-form")?.addEventListener("submit", sendChatMessage);
+  bindChatComposer();
   document.querySelector("#bank-form")?.addEventListener("submit", addMemory);
   document.querySelector("#profile-form")?.addEventListener("submit", saveProfile);
   document.querySelector("#reset-demo")?.addEventListener("click", resetDemo);
@@ -2146,12 +2148,37 @@ async function completeOnboarding(event) {
 async function sendChatMessage(event) {
   event.preventDefault();
   const input = document.querySelector("#chat-message");
+  if (!input) return;
   const message = input.value.trim();
+  if (!message) return;
+  ui.chatComposerDraft = "";
   input.value = "";
-  await submitPrompt(message);
+  resizeChatComposer(input);
+  await submitPrompt(message, null, true);
 }
 
-async function submitPrompt(message, display = null) {
+function resizeChatComposer(input) {
+  input.style.height = "auto";
+  input.style.height = `${Math.min(input.scrollHeight, 132)}px`;
+  input.style.overflowY = input.scrollHeight > 132 ? "auto" : "hidden";
+}
+
+function bindChatComposer() {
+  const input = document.querySelector("#chat-message");
+  if (!input) return;
+  resizeChatComposer(input);
+  input.addEventListener("input", () => {
+    ui.chatComposerDraft = input.value;
+    resizeChatComposer(input);
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+    event.preventDefault();
+    input.form?.requestSubmit();
+  });
+}
+
+async function submitPrompt(message, display = null, restoreOnFailure = false) {
   if (!message) return;
   ui.pendingMessages = [{
     id: `pending-${Date.now()}`,
@@ -2172,7 +2199,16 @@ async function submitPrompt(message, display = null) {
   } catch (error) {
     ui.pendingMessages = [];
     ui.loading = false;
+    if (restoreOnFailure) ui.chatComposerDraft = message;
     showToast(error.message);
+    if (restoreOnFailure) {
+      requestAnimationFrame(() => {
+        const input = document.querySelector("#chat-message");
+        if (!input) return;
+        resizeChatComposer(input);
+        input.focus();
+      });
+    }
   }
 }
 

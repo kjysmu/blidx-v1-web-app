@@ -278,6 +278,7 @@ h1 + .flow-strip { margin-top: 18px; }
 .input:focus, textarea:focus, select:focus { border-color: #9b91dd; box-shadow: 0 0 0 3px var(--purple-soft); }
 textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .chat-stream { display: grid; gap: 10px; margin-bottom: 170px; }
+.chat-page.has-active-draft .chat-stream { margin-bottom: 235px; }
 .msg { display: grid; gap: 4px; justify-items: start; }
 .msg.user { justify-items: end; }
 .msg-label { margin-left: 34px; color: var(--purple); font-size: 12px; font-weight: 700; }
@@ -364,9 +365,10 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
   display: flex; gap: 8px; align-items: center; padding: 7px; border: 0.5px solid var(--line);
   border-radius: 999px; background: white; box-shadow: var(--deep-shadow);
 }
-.composer-box input {
+.composer-box textarea {
   border: 0; box-shadow: none; background: var(--paper-2); border-radius: 999px;
-  padding: 11px 16px;
+  height: 44px; min-height: 44px; max-height: 132px;
+  padding: 10px 16px; resize: none; overflow-y: hidden; line-height: 1.45;
 }
 .send-button {
   width: 44px; min-width: 44px; height: 44px; padding: 0; border-radius: 50%;
@@ -1040,6 +1042,11 @@ button.settings-row-link:hover { background: #faf9ff; }
   .mockup-row { display: grid; }
   .variant-grid { grid-template-columns: 1fr; }
   .chat-stream { margin-bottom: 150px; gap: 9px; }
+  .chat-page.has-active-draft .chat-stream { margin-bottom: 210px; }
+  .chat-page.has-activity { padding-top: 10px; }
+  .chat-page.has-activity .chat-heading,
+  .chat-page.has-activity > .flow-strip { display: none; }
+  .chat-page.has-activity .chat-guide { margin-bottom: 8px; }
   .bubble, .draft-card { scroll-margin-bottom: 185px; }
   .bubble { max-width: 88%; font-size: 14px; padding: 10px 13px; }
   .chat-stream .draft-card { max-width: 100%; margin-left: 0; }
@@ -1054,13 +1061,16 @@ button.settings-row-link:hover { background: #faf9ff; }
     align-items: center; border-radius: 24px; padding: 6px;
     box-shadow: 0 -4px 24px rgba(0,0,0,.08);
   }
-  .composer-box input { min-width: 0; font-size: 16px; }
+  .composer-box textarea { min-width: 0; font-size: 16px; }
   .composer-box .send-button { width: 42px; min-width: 42px; height: 40px; }
   .current-draft-shortcut {
-    display: grid; align-items: start; gap: 6px;
+    display: flex; align-items: center; gap: 8px;
     padding: 8px 10px; font-size: 11px;
   }
-  .current-draft-shortcut .read-more { justify-self: start; }
+  .current-draft-shortcut span {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .current-draft-shortcut .read-more { flex: 0 0 auto; margin-top: 0; }
   .list-top, .draft-summary, .quality-head, .draft-meta {
     display: grid; grid-template-columns: 1fr; gap: 9px;
   }
