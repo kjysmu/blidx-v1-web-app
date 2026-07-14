@@ -283,10 +283,13 @@ textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 .msg { display: grid; gap: 4px; justify-items: start; }
 .msg.user { justify-items: end; }
 .msg-label { margin-left: 34px; color: var(--purple); font-size: 12px; font-weight: 700; }
-.msg-row { display: flex; align-items: flex-end; gap: 8px; max-width: 100%; min-width: 0; }
-/* Give user bubbles the full chat row as their sizing reference. Otherwise
-   the percentage max-width is calculated from a shrink-wrapped row. */
-.msg.user .msg-row { width: 100%; justify-content: flex-end; }
+.msg-row {
+  display: flex; align-items: flex-end; gap: 8px;
+  width: 100%; max-width: 100%; min-width: 0;
+}
+/* Keep user messages on the outer edge while both sides use the full row as
+   the percentage max-width reference. */
+.msg.user .msg-row { justify-content: flex-end; }
 .msg-time { color: var(--faint); font-size: 11px; margin-left: 34px; }
 .msg.user .msg-time { margin-left: 0; margin-right: 4px; }
 .date-divider {

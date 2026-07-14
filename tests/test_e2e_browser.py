@@ -148,6 +148,14 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
 
     fill_onboarding(page)
 
+    mira_row_metrics = page.locator(".msg.mira .msg-row").first.evaluate(
+        """(row) => ({
+            rowWidth: row.getBoundingClientRect().width,
+            bubbleWidth: row.querySelector(".bubble.mira").getBoundingClientRect().width,
+        })"""
+    )
+    assert mira_row_metrics["rowWidth"] > mira_row_metrics["bubbleWidth"] + 40
+
     mira_avatar = page.locator(".mira-avatar img").first
     mira_avatar.wait_for()
     assert mira_avatar.get_attribute("src") == "/assets/mira-profile.jpg"
