@@ -186,6 +186,25 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     chat_input.press("Shift+Enter")
     chat_input.type("Second line")
     assert chat_input.input_value() == "First line\nSecond line"
+
+    chat_input.fill("how old are you?")
+    page.locator('[data-testid="chat-send"]').click()
+    short_user_bubble = page.locator(".msg.user .bubble").filter(
+        has_text="how old are you?"
+    )
+    short_user_bubble.wait_for()
+    short_message_metrics = short_user_bubble.evaluate(
+        """(element) => {
+            const paragraph = element.querySelector("p");
+            return {
+                height: paragraph.getBoundingClientRect().height,
+                lineHeight: Number.parseFloat(getComputedStyle(paragraph).lineHeight),
+            };
+        }"""
+    )
+    assert short_message_metrics["height"] <= short_message_metrics["lineHeight"] + 1
+    page.locator(".bubble.typing").wait_for(state="detached")
+
     chat_input.fill("Give me 3 angles from my Content Bank")
     page.locator('[data-testid="chat-send"]').click()
     page.locator('[data-testid="angle-action"]').first.wait_for(timeout=10000)
