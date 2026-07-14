@@ -136,6 +136,42 @@ def sign_up_verify_and_login(page, email: str, name: str) -> None:
     page.locator('[data-testid="auth-submit"]').click()
 
 
+def test_mobile_login_prioritizes_authentication(live_server, browser):
+    context = browser.new_context(
+        viewport={"width": 430, "height": 932},
+        device_scale_factor=3,
+        is_mobile=True,
+        has_touch=True,
+    )
+    page = context.new_page()
+    page.goto(live_server)
+    page.locator('[data-testid="auth-form"]').wait_for()
+
+    metrics = page.evaluate(
+        """() => {
+            const card = document.querySelector(".auth-card");
+            const submit = document.querySelector('[data-testid="auth-submit"]');
+            const demo = document.querySelector("#continue-demo");
+            return {
+                viewportHeight: window.innerHeight,
+                cardTop: card.getBoundingClientRect().top,
+                submitBottom: submit.getBoundingClientRect().bottom,
+                demoBottom: demo.getBoundingClientRect().bottom,
+                clientWidth: document.documentElement.clientWidth,
+                scrollWidth: document.documentElement.scrollWidth,
+            };
+        }"""
+    )
+
+    assert metrics["cardTop"] < 240
+    assert metrics["submitBottom"] < metrics["viewportHeight"]
+    assert metrics["demoBottom"] < metrics["viewportHeight"]
+    assert metrics["scrollWidth"] == metrics["clientWidth"]
+    assert page.locator('[data-testid="mobile-auth-benefits"]').is_visible()
+    assert not page.locator(".auth-points-desktop").is_visible()
+    context.close()
+
+
 def test_authenticated_golden_path_in_browser(live_server, browser):
     context = browser.new_context()
     page = context.new_page()

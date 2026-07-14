@@ -782,24 +782,28 @@ button.day:hover { border-color: #b8afe8; box-shadow: 0 4px 14px rgba(85,72,184,
 .auth-points {
   display: grid; gap: 12px; margin-top: 30px; max-width: 620px;
 }
-.auth-points div {
+.auth-points div, .auth-benefit-list div {
   padding: 15px 16px; border: 1px solid var(--line); border-radius: 16px;
   background: rgba(255,255,255,.74);
 }
-.auth-points strong { display: block; margin-bottom: 4px; }
-.auth-points span { color: var(--muted); line-height: 1.5; }
+.auth-points strong, .auth-benefit-list strong { display: block; margin-bottom: 4px; }
+.auth-points span, .auth-benefit-list span { color: var(--muted); line-height: 1.5; }
+.auth-benefits-mobile { display: none; }
 .auth-card {
   padding: 26px; background: white; border: 1px solid var(--line);
   border-radius: 24px; box-shadow: var(--shadow);
 }
 .auth-card h2 { font-family: "DM Serif Display"; font-size: 32px; font-weight: 400; margin-bottom: 8px; }
 .auth-card form { display: grid; gap: 15px; margin-top: 18px; }
-.auth-switch { width: 100%; margin-top: 10px; }
-.auth-text-link {
-  width: 100%; margin-top: 12px; border: 0; background: transparent;
-  color: var(--purple); font-weight: 800;
+.auth-field-label {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
 }
-.auth-text-link:hover { color: var(--purple-dark); text-decoration: underline; }
+.auth-switch { width: 100%; margin-top: 10px; }
+.auth-inline-link {
+  padding: 0; border: 0; background: transparent;
+  color: var(--purple); font-size: 12px; font-weight: 800;
+}
+.auth-inline-link:hover { color: var(--purple-dark); text-decoration: underline; }
 .auth-debug-link { display: block; width: 100%; margin-top: 14px; text-align: center; }
 .onboarding-page { max-width: 1020px; }
 .onboarding-hero {
@@ -1060,12 +1064,46 @@ button.settings-row-link:hover { background: #faf9ff; }
   .workflow-card, .mira-brief { padding: 15px; }
   .next-action { display: grid; gap: 5px; }
   .next-action strong { white-space: normal; }
-  .auth-page { display: block; padding: 18px 14px 28px; min-height: 100dvh; }
-  .auth-hero { padding: 10px 2px 18px; }
-  .auth-brand { margin-bottom: 28px; }
-  .auth-card { border-radius: 18px; padding: 20px; }
-  .auth-points { margin-top: 18px; }
-  .auth-points div { padding: 12px; }
+  .auth-page {
+    display: flex; flex-direction: column; align-items: stretch; gap: 0;
+    width: 100%; min-height: 100dvh; margin: 0;
+    padding: max(16px, env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom));
+  }
+  .auth-hero { padding: 2px 0 0; }
+  .auth-brand {
+    margin: 0 0 18px; gap: 9px; font-size: 22px;
+  }
+  .auth-brand .brand-mark { width: 32px; height: 32px; border-radius: 10px; }
+  .auth-hero .eyebrow { font-size: 10px; letter-spacing: .1em; }
+  .auth-hero h1 {
+    max-width: none; margin-top: 6px;
+    font-size: clamp(34px, 9vw, 40px); line-height: 1.02;
+  }
+  .auth-hero .auth-lead {
+    margin: 9px 0 0; max-width: 38rem;
+    font-size: 14px; line-height: 1.5;
+  }
+  .auth-points-desktop { display: none; }
+  .auth-card {
+    margin-top: 17px; padding: 18px;
+    border-radius: 18px; box-shadow: 0 8px 28px rgba(40,35,65,.07);
+  }
+  .auth-card h2 { font-size: 28px; line-height: 1.05; }
+  .auth-card > .muted { margin: 7px 0 0; font-size: 13px; line-height: 1.45; }
+  .auth-card form { gap: 12px; margin-top: 14px; }
+  .auth-card .input { min-height: 50px; }
+  .auth-card .button { min-height: 48px; }
+  .auth-switch { margin-top: 8px; }
+  .auth-benefits-mobile {
+    display: block; margin-top: 14px;
+    border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.65);
+  }
+  .auth-benefits-mobile summary {
+    padding: 14px 16px; color: var(--purple); font-size: 13px;
+    font-weight: 800; cursor: pointer; list-style-position: inside;
+  }
+  .auth-benefit-list { display: grid; gap: 8px; padding: 0 10px 10px; }
+  .auth-benefit-list div { padding: 11px 12px; border-radius: 12px; font-size: 12px; }
   .onboarding-hero { grid-template-columns: 1fr; }
   .onboarding-score-card { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .onboarding-score-card strong { grid-column: 1 / -1; }

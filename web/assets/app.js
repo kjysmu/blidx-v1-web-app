@@ -262,28 +262,39 @@ function layout(content) {
 function renderAuth() {
   const isSignup = ui.authMode === "signup";
   const titles = {
-    login: "Welcome back to Blidx.",
-    signup: "Create your Blidx workspace.",
+    login: "Welcome back.",
+    signup: "Create your workspace.",
     forgot: "Recover your Blidx account.",
     reset: "Choose a new password.",
     "email-sent": "Check your email.",
   };
-  return `<main class="auth-page">
+  const descriptions = {
+    login: "Continue with your profile, Content Bank, drafts, and LinkedIn workflow.",
+    signup: "Give Mira a private workspace for your ideas, voice, drafts, and publishing flow.",
+    forgot: "Request a secure reset link for your account.",
+    reset: "Set a new password and return to your workspace.",
+    "email-sent": "Use the secure link in your email to continue.",
+  };
+  const showBenefits = ui.authMode === "login" || ui.authMode === "signup";
+  return `<main class="auth-page" data-testid="auth-page">
     <section class="auth-hero">
       <div class="brand auth-brand"><span class="brand-mark">B</span> Blidx</div>
       <div class="eyebrow">Mira · first GTM agent</div>
       <h1>${titles[ui.authMode] || titles.login}</h1>
-      <p class="lead">Sign in to keep your own profile, Content Bank, drafts, and LinkedIn workflow separate from the public demo.</p>
-      <div class="auth-points">
-        <div><strong>1/ Private workspace</strong><span>Your drafts and memories stay under your account.</span></div>
-        <div><strong>2/ Claude-backed Mira</strong><span>Chat, angle selection, and draft generation use your context.</span></div>
-        <div><strong>3/ LinkedIn workflow</strong><span>Prepare posts for OAuth publishing or manual posting.</span></div>
-      </div>
+      <p class="lead auth-lead">${descriptions[ui.authMode] || descriptions.login}</p>
+      ${showBenefits ? `<div class="auth-points auth-points-desktop">${authBenefitItems()}</div>` : ""}
     </section>
     <section class="auth-card">
       ${renderAuthCard(isSignup)}
     </section>
+    ${showBenefits ? `<details class="auth-benefits-mobile" data-testid="mobile-auth-benefits"><summary>Why use a Blidx account?</summary><div class="auth-benefit-list">${authBenefitItems()}</div></details>` : ""}
   </main>`;
+}
+
+function authBenefitItems() {
+  return `<div><strong>1/ Private workspace</strong><span>Your drafts and memories stay under your account.</span></div>
+    <div><strong>2/ Context-aware Mira</strong><span>Chat, angles, and drafts use your profile and Content Bank.</span></div>
+    <div><strong>3/ LinkedIn workflow</strong><span>Review and publish from one focused workflow.</span></div>`;
 }
 
 function authMessages() {
@@ -333,10 +344,9 @@ function renderAuthCard(isSignup) {
     <form id="auth-form" data-testid="auth-form">
       ${isSignup ? '<div class="field"><label>Name</label><input class="input" name="user_name" autocomplete="name" placeholder="Jae" /></div>' : ""}
       <div class="field"><label>Email</label><input class="input" name="email" type="email" autocomplete="email" required placeholder="you@example.com" /></div>
-      <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="${isSignup ? "new-password" : "current-password"}" required minlength="${isSignup ? 8 : 1}" maxlength="128" placeholder="••••••••" /></div>
+      <div class="field"><div class="auth-field-label"><label>Password</label>${!isSignup ? '<button type="button" class="auth-inline-link" id="forgot-password">Forgot password?</button>' : ""}</div><input class="input" name="password" type="password" autocomplete="${isSignup ? "new-password" : "current-password"}" required minlength="${isSignup ? 8 : 1}" maxlength="128" placeholder="••••••••" /></div>
       <button class="button" data-testid="auth-submit" style="width:100%" ${ui.authSubmitting ? "disabled" : ""}>${ui.authSubmitting ? "Checking..." : isSignup ? "Create account" : "Log in"}</button>
     </form>
-    ${!isSignup ? '<button class="auth-text-link" id="forgot-password">Forgot password?</button>' : ""}
     <button class="button ghost auth-switch" id="toggle-auth" data-testid="auth-toggle">${isSignup ? "Already have an account? Log in" : "New here? Create account"}</button>
     <button class="button secondary auth-switch" id="continue-demo">Continue with public demo</button>`;
 }
