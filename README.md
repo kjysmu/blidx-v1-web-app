@@ -103,6 +103,8 @@ PUT /profile
 POST /chat
 POST /memory
 GET /memory
+POST /api/content-bank/upload
+POST /api/content-bank/import-url
 POST /generate
 GET /posts
 POST /posts/{post_id}/approve
@@ -120,6 +122,11 @@ Postgres workspace tables. Local development can still use JSON files by setting
 - Claude / Anthropic: supported through `ANTHROPIC_API_KEY`. When the key is
   missing or the API call fails, Mira falls back to the deterministic demo
   generator so the app stays usable.
+- Source-grounded Content Bank: notes plus PDF, DOCX, TXT, Markdown, public
+  webpage, and public PDF imports are extracted into bounded per-user text
+  records. Imports reject duplicate content, private-network URLs, unsupported
+  types, and sources over 5 MB. Up to five selected sources are carried into
+  Mira's chat/draft context and recorded on the resulting draft.
 - LinkedIn: signed one-time OAuth state binds each connection to the Blidx user
   who started it. Tokens are encrypted at rest, disconnect/expiry states are
   supported, and text publishing uses LinkedIn's versioned Posts API. The

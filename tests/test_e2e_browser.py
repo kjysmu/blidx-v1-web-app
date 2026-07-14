@@ -160,7 +160,24 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
         "A founder told me they do not need another AI writing tool; they need help deciding which real work moment deserves a post."
     )
     page.locator('[data-testid="bank-save"]').click()
-    page.get_by_text("Saved to Content Bank").wait_for()
+    page.get_by_text("Saved and selected for Mira").wait_for()
+
+    page.get_by_role("tab", name="Upload file").click()
+    page.locator('[data-testid="source-file"]').set_input_files(
+        {
+            "name": "composer-source.txt",
+            "mimeType": "text/plain",
+            "buffer": (
+                b"AI helps a human composer explore more musical variations, "
+                b"while the composer remains responsible for taste and the final choice."
+            ),
+        }
+    )
+    page.locator('[data-testid="source-upload"]').click()
+    page.get_by_text("composer-source imported and selected for Mira.").wait_for()
+    selection_bar = page.locator('[data-testid="source-selection-bar"]')
+    selection_bar.wait_for()
+    assert "2/5 sources selected for Mira" in selection_bar.inner_text()
 
     page.locator('[data-tab="chat"]').first.click()
     chat_input = page.locator('[data-testid="chat-message"]')
@@ -180,6 +197,9 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     draft_meta = draft_card.locator(".draft-meta").inner_text()
     assert "Created:" in draft_meta
     assert "Suggested:" not in draft_meta
+    draft_card.locator('[data-testid="draft-sources"]').get_by_text(
+        "Grounded in 2 Content Bank sources"
+    ).wait_for()
 
     user_bubble_metrics = page.locator(".msg.user .bubble").evaluate_all(
         """(elements) => elements.map((element) => ({

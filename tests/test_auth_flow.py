@@ -73,6 +73,34 @@ def test_authenticated_workspaces_are_isolated():
     assert second_state["content_bank"] == []
 
 
+def test_authenticated_async_upload_stays_in_the_requesting_workspace():
+    first = register_user(name="Source Owner")
+    second = register_user(name="Other Workspace")
+    first_headers = {"Authorization": f"Bearer {first['access_token']}"}
+    second_headers = {"Authorization": f"Bearer {second['access_token']}"}
+
+    upload = client.post(
+        "/api/content-bank/upload",
+        headers=first_headers,
+        data={"category": "insights"},
+        files={
+            "file": (
+                "private-source.txt",
+                "A private founder source about human judgment in AI-assisted composition.",
+                "text/plain",
+            )
+        },
+    )
+
+    assert upload.status_code == 200
+    first_state = client.get("/api/state", headers=first_headers).json()
+    second_state = client.get("/api/state", headers=second_headers).json()
+    assert [entry["source_title"] for entry in first_state["content_bank"]] == [
+        "private-source"
+    ]
+    assert second_state["content_bank"] == []
+
+
 def test_authenticated_user_can_complete_onboarding():
     auth = register_user(name="Onboard User")
     headers = {"Authorization": f"Bearer {auth['access_token']}"}

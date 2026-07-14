@@ -1,11 +1,16 @@
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from app.api.deps import use_request_user
-from app.demo_store import demo_store
+from app.demo_store import DuplicateSourceError, current_user_id, demo_store
 from app.quality_benchmarks import BENCHMARK_SCENARIOS
+from app.services.source_ingestion_service import (
+    MAX_SOURCE_BYTES,
+    SourceIngestionError,
+    source_ingestion_service,
+)
 
 router = APIRouter(dependencies=[Depends(use_request_user)])
 
@@ -45,6 +50,7 @@ class MemoryUpdatePayload(BaseModel):
 class DraftPayload(BaseModel):
     topic: str = Field(min_length=3)
     source: str = "user_initiated"
+    source_ids: list[str] = Field(default_factory=list, max_length=5)
 
 
 class EditPayload(BaseModel):
@@ -65,6 +71,12 @@ class ChatPayload(BaseModel):
     # Optional short human label shown in the chat transcript while `message`
     # (e.g. a full angle prompt) drives the actual processing.
     display: str | None = Field(default=None, max_length=200)
+    source_ids: list[str] = Field(default_factory=list, max_length=5)
+
+
+class SourceUrlPayload(BaseModel):
+    url: str = Field(min_length=8, max_length=2_000)
+    category: str | None = None
 
 
 class LinkedInTrackPayload(BaseModel):
@@ -111,6 +123,65 @@ def create_content_bank_entry(payload: MemoryPayload) -> dict[str, Any]:
     return demo_store.add_memory(payload.raw_text, payload.category)
 
 
+def source_error(error: SourceIngestionError) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={"code": error.code, "message": str(error)},
+    )
+
+
+def save_ingested_source(
+    source,
+    category: str | None,
+    user: dict | None,
+) -> dict[str, Any]:
+    previous_user_id = current_user_id.set(user["id"] if user else None)
+    try:
+        return demo_store.add_source(source.text, category, source.metadata())
+    except DuplicateSourceError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "source_duplicate",
+                "message": "This source is already in your Content Bank.",
+                "entry_id": error.entry_id,
+            },
+        ) from error
+    finally:
+        current_user_id.reset(previous_user_id)
+
+
+@router.post("/content-bank/upload")
+async def upload_content_bank_source(
+    file: UploadFile = File(...),
+    category: str | None = Form(default=None),
+    user: dict | None = Depends(use_request_user),
+) -> dict[str, Any]:
+    data = await file.read(MAX_SOURCE_BYTES + 1)
+    await file.close()
+    try:
+        source = source_ingestion_service.extract_upload(
+            filename=file.filename or "source",
+            content_type=file.content_type,
+            data=data,
+        )
+    except SourceIngestionError as error:
+        raise source_error(error) from error
+    return save_ingested_source(source, category, user)
+
+
+@router.post("/content-bank/import-url")
+async def import_content_bank_url(
+    payload: SourceUrlPayload,
+    user: dict | None = Depends(use_request_user),
+) -> dict[str, Any]:
+    try:
+        source = await source_ingestion_service.import_url(payload.url)
+    except SourceIngestionError as error:
+        raise source_error(error) from error
+    return save_ingested_source(source, payload.category, user)
+
+
 @router.put("/content-bank/{memory_id}")
 def update_content_bank_entry(
     memory_id: str, payload: MemoryUpdatePayload
@@ -137,12 +208,16 @@ def complete_onboarding(payload: OnboardingPayload) -> dict[str, Any]:
 
 @router.post("/drafts")
 def create_draft(payload: DraftPayload) -> dict[str, Any]:
-    return demo_store.create_post(payload.topic, payload.source)
+    return demo_store.create_post(payload.topic, payload.source, payload.source_ids)
 
 
 @router.post("/chat/message")
 def chat_message(payload: ChatPayload) -> dict[str, Any]:
-    return demo_store.chat(payload.message, display=payload.display)
+    return demo_store.chat(
+        payload.message,
+        display=payload.display,
+        source_ids=payload.source_ids,
+    )
 
 
 @router.post("/drafts/{draft_id}/edit")

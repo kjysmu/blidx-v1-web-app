@@ -44,6 +44,12 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class DuplicateSourceError(ValueError):
+    def __init__(self, entry_id: str) -> None:
+        super().__init__("Content Bank source already exists")
+        self.entry_id = entry_id
+
+
 class DemoStore:
     def __init__(self) -> None:
         self.path = Path(__file__).resolve().parent.parent / "data" / "demo_state.json"
@@ -103,6 +109,7 @@ class DemoStore:
                 "last_topic": None,
                 "last_angles": [],
                 "last_memory_id": None,
+                "grounded_source_ids": [],
                 "updated_at": now,
             },
             "linkedin": {
@@ -230,18 +237,32 @@ class DemoStore:
             return self._public_state(state)
 
     def add_memory(self, raw_text: str, category: str | None = None) -> dict:
-        category = category or self._categorize(raw_text)
-        entry = {
-            "id": str(uuid.uuid4()),
-            "raw_text": raw_text.strip(),
-            "category": category,
-            "tags": [category.title()],
-            "freshness": "fresh",
-            "content_potential": self._potential(raw_text),
-            "created_at": utc_now().isoformat(),
-        }
+        entry = self._memory_entry(raw_text, category)
         with self.lock:
             state = self._read()
+            state["content_bank"].insert(0, entry)
+            self._write(state)
+        return deepcopy(entry)
+
+    def add_source(
+        self,
+        raw_text: str,
+        category: str | None = None,
+        metadata: dict | None = None,
+    ) -> dict:
+        entry = self._memory_entry(raw_text, category, metadata)
+        with self.lock:
+            state = self._read()
+            duplicate = next(
+                (
+                    item
+                    for item in state.get("content_bank", [])
+                    if item.get("content_hash") == entry["content_hash"]
+                ),
+                None,
+            )
+            if duplicate:
+                raise DuplicateSourceError(duplicate["id"])
             state["content_bank"].insert(0, entry)
             self._write(state)
         return deepcopy(entry)
@@ -280,9 +301,15 @@ class DemoStore:
                     return deepcopy(removed)
         return None
 
-    def create_post(self, topic: str, source: str = "user_initiated") -> dict:
+    def create_post(
+        self,
+        topic: str,
+        source: str = "user_initiated",
+        source_ids: list[str] | None = None,
+    ) -> dict:
         with self.lock:
             state = self._read()
+            self._set_grounded_sources(state, source_ids)
             post = self._draft(state, topic, source)
             state["posts"].insert(0, post)
             self._append_message(
@@ -303,10 +330,16 @@ class DemoStore:
             self._write(state)
             return deepcopy(post)
 
-    def chat(self, content: str, display: str | None = None) -> dict:
+    def chat(
+        self,
+        content: str,
+        display: str | None = None,
+        source_ids: list[str] | None = None,
+    ) -> dict:
         content = content.strip()
         with self.lock:
             state = self._read()
+            self._set_grounded_sources(state, source_ids)
             intent = self._detect_chat_intent(content)
             self._set_workflow(state, last_intent=intent)
             # The transcript shows the short human label when one is provided;
@@ -934,6 +967,15 @@ class DemoStore:
     @staticmethod
     def _normalize_state(state: dict) -> dict:
         state.setdefault("content_bank", [])
+        for entry in state["content_bank"]:
+            raw_text = (entry.get("raw_text") or "").strip()
+            entry.setdefault("source_type", "note")
+            entry.setdefault("source_title", "Manual note")
+            entry.setdefault("word_count", len(raw_text.split()))
+            entry.setdefault(
+                "content_hash",
+                hashlib.sha256(raw_text.casefold().encode("utf-8")).hexdigest(),
+            )
         state.setdefault("posts", [])
         state.setdefault("conversation_signals", [])
         state.setdefault("draft_feedback", [])
@@ -964,6 +1006,7 @@ class DemoStore:
         workflow.setdefault("last_topic", None)
         workflow.setdefault("last_angles", [])
         workflow.setdefault("last_memory_id", None)
+        workflow.setdefault("grounded_source_ids", [])
         workflow.setdefault("updated_at", utc_now().isoformat())
         if workflow.get("selected_angle") and not isinstance(workflow["selected_angle"], dict):
             workflow["selected_angle"] = None
@@ -1047,17 +1090,51 @@ class DemoStore:
         return message
 
     @staticmethod
-    def _memory_entry(raw_text: str, category: str | None = None) -> dict:
+    def _memory_entry(
+        raw_text: str,
+        category: str | None = None,
+        metadata: dict | None = None,
+    ) -> dict:
+        text = raw_text.strip()
         category = category or DemoStore._categorize(raw_text)
-        return {
+        metadata = metadata or {}
+        entry = {
             "id": str(uuid.uuid4()),
-            "raw_text": raw_text.strip(),
+            "raw_text": text,
             "category": category,
             "tags": [category.title()],
             "freshness": "fresh",
             "content_potential": DemoStore._potential(raw_text),
+            "source_type": metadata.get("source_type") or "note",
+            "source_title": metadata.get("source_title") or "Manual note",
+            "word_count": metadata.get("word_count") or len(text.split()),
+            "content_hash": metadata.get("content_hash")
+            or hashlib.sha256(text.casefold().encode("utf-8")).hexdigest(),
             "created_at": utc_now().isoformat(),
         }
+        for key in ("mime_type", "file_name", "source_url"):
+            if metadata.get(key):
+                entry[key] = metadata[key]
+        return entry
+
+    @staticmethod
+    def _set_grounded_sources(state: dict, source_ids: list[str] | None) -> list[str]:
+        requested = source_ids or []
+        available = {entry.get("id") for entry in state.get("content_bank", [])}
+        selected = []
+        for source_id in requested:
+            if source_id in available and source_id not in selected:
+                selected.append(source_id)
+            if len(selected) == 5:
+                break
+        DemoStore._set_workflow(state, grounded_source_ids=selected)
+        return selected
+
+    @staticmethod
+    def _selected_memories(state: dict) -> list[dict]:
+        selected_ids = (state.get("mira_workflow") or {}).get("grounded_source_ids") or []
+        entries = {entry.get("id"): entry for entry in state.get("content_bank", [])}
+        return [entries[source_id] for source_id in selected_ids if source_id in entries]
 
     @staticmethod
     def _set_workflow(state: dict, **updates: object) -> dict:
@@ -1407,6 +1484,18 @@ class DemoStore:
     def _topic_from_context(state: dict, current_content: str | None = None) -> str | None:
         workflow = state.get("mira_workflow") or {}
         current_lowered = (current_content or "").lower()
+        selected_memories = DemoStore._selected_memories(state)
+        wants_selected_context = any(
+            phrase in current_lowered
+            for phrase in (
+                "selected source",
+                "selected content bank",
+                "these sources",
+                "these memories",
+            )
+        )
+        if wants_selected_context and selected_memories:
+            return selected_memories[0].get("raw_text", "")[:140]
         wants_bank_context = any(
             phrase in current_lowered
             for phrase in (
@@ -1585,6 +1674,8 @@ class DemoStore:
         profile = state["profile"]
         topic = DemoStore._subject_from_topic(topic)
         memory = DemoStore._relevant_memory(state, topic)
+        selected_memories = DemoStore._selected_memories(state)
+        grounded_memories = selected_memories or ([memory] if memory else [])
         first_name = profile.get("first_name") or "there"
         content, provider, error = DemoStore._generate_ai_draft(state, topic)
         if not content:
@@ -1592,11 +1683,15 @@ class DemoStore:
             provider = "template"
 
         sources = []
-        if memory:
+        for grounded_memory in grounded_memories:
             sources.append(
                 {
-                    "type": "personal",
-                    "title": f"Content Bank · {memory['category'].title()}",
+                    "type": "content_bank",
+                    "title": grounded_memory.get("source_title")
+                    or f"Content Bank · {grounded_memory.get('category', 'general').title()}",
+                    "memory_id": grounded_memory.get("id"),
+                    "source_type": grounded_memory.get("source_type", "note"),
+                    "url": grounded_memory.get("source_url"),
                 }
             )
         if provider != "template":
@@ -1612,6 +1707,11 @@ class DemoStore:
             "status": "pending",
             "source": source,
             "sources": sources,
+            "source_ids": [
+                grounded_memory.get("id")
+                for grounded_memory in grounded_memories
+                if grounded_memory.get("id")
+            ],
             "char_count": len(content[:3000]),
             "version": 1,
             "scheduled_at": None,
@@ -1624,9 +1724,9 @@ class DemoStore:
             "variants": DemoStore._draft_variants(state, topic, content[:3000]),
             "selected_variant_id": "main",
             "message": (
-                f"{first_name}, I used Claude with your profile, Content Bank context, and the {DemoStore._framework_label(DemoStore._fallback_style(state, topic))} framework."
+                f"{first_name}, I used Claude with your profile, {len(grounded_memories)} selected Content Bank source{'s' if len(grounded_memories) != 1 else ''}, and the {DemoStore._framework_label(DemoStore._fallback_style(state, topic))} framework."
                 if provider != "template"
-                else f"{first_name}, I used your profile, freshest context, and the {DemoStore._framework_label(DemoStore._fallback_style(state, topic))} framework for this angle."
+                else f"{first_name}, I used your profile, {len(grounded_memories) or 'the freshest'} Content Bank source{'s' if len(grounded_memories) != 1 else ''}, and the {DemoStore._framework_label(DemoStore._fallback_style(state, topic))} framework for this angle."
             ),
         }
         post["quality_review"] = DemoStore._quality_review(state, post)
@@ -1662,7 +1762,12 @@ class DemoStore:
             if audience and audience.lower() in plain
         ]
         memory_text = ""
-        if state.get("content_bank"):
+        selected_memories = DemoStore._selected_memories(state)
+        if selected_memories:
+            memory_text = " ".join(
+                memory.get("raw_text", "") for memory in selected_memories
+            )
+        elif state.get("content_bank"):
             memory_text = state["content_bank"][0].get("raw_text", "")
         memory_terms = [
             term.strip(".,:;!?").lower()
@@ -2208,6 +2313,26 @@ class DemoStore:
 
     @staticmethod
     def _relevant_memory(state: dict, topic: str) -> dict | None:
+        selected = DemoStore._selected_memories(state)
+        if selected:
+            topic_terms = DemoStore._topic_terms(topic)
+            if not topic_terms:
+                return selected[0]
+            return max(
+                selected,
+                key=lambda entry: len(
+                    topic_terms
+                    & DemoStore._topic_terms(
+                        " ".join(
+                            [
+                                entry.get("raw_text", ""),
+                                entry.get("source_title", ""),
+                                entry.get("category", ""),
+                            ]
+                        )
+                    )
+                ),
+            )
         topic_terms = DemoStore._topic_terms(topic)
         if not topic_terms:
             return None
@@ -2368,10 +2493,16 @@ class DemoStore:
             "Return only the revised post text, with no preamble or markdown fence. "
             "Keep the user's facts intact, do not invent specifics, and stay under 2,600 characters."
         )
+        post_source_ids = set(post.get("source_ids") or [])
+        revision_sources = [
+            entry
+            for entry in state.get("content_bank", [])
+            if entry.get("id") in post_source_ids
+        ] or state.get("content_bank", [])[:5]
         prompt = "\n\n".join(
             [
                 "USER PROFILE\n" + json.dumps(state.get("profile", {}), indent=2),
-                "CONTENT BANK\n" + json.dumps(state.get("content_bank", [])[:5], indent=2),
+                "CONTENT BANK\n" + json.dumps(revision_sources, indent=2),
                 "CURRENT DRAFT\n" + post.get("content", ""),
                 "REVISION INSTRUCTIONS\n" + instructions.strip(),
             ]
@@ -2400,7 +2531,25 @@ class DemoStore:
         profile = state["profile"]
         topic = DemoStore._subject_from_topic(topic)
         memory = DemoStore._relevant_memory(state, topic)
-        memories = [memory] if memory else []
+        selected_memories = DemoStore._selected_memories(state)
+        source_memories = selected_memories or ([memory] if memory else [])
+        memories = []
+        remaining_source_chars = 24_000
+        for source_memory in source_memories[:5]:
+            excerpt = (source_memory.get("raw_text") or "")[: min(6_000, remaining_source_chars)]
+            remaining_source_chars -= len(excerpt)
+            memories.append(
+                {
+                    "id": source_memory.get("id"),
+                    "title": source_memory.get("source_title") or "Content Bank note",
+                    "source_type": source_memory.get("source_type", "note"),
+                    "category": source_memory.get("category"),
+                    "source_url": source_memory.get("source_url"),
+                    "text": excerpt,
+                }
+            )
+            if remaining_source_chars <= 0:
+                break
         writing_samples = profile.get("writing_samples") or []
         avoided = profile.get("avoided_phrases") or []
         framework = DemoStore._fallback_style(state, topic)
@@ -2424,6 +2573,13 @@ class DemoStore:
                 "The requested topic above outranks Content Bank context. "
                 "Use memories as optional supporting texture only when they clearly help the topic. "
                 "Do not turn the draft into a different subject just because a memory is more personal.",
+                "SOURCE GROUNDING\n"
+                + (
+                    "The user explicitly selected the sources below. Treat them as the primary factual evidence for this draft. "
+                    "Use only claims supported by their text or the user profile. Do not invent missing details, and do not mention a source title unless it reads naturally."
+                    if selected_memories
+                    else "No sources were explicitly selected. Use only a clearly relevant Content Bank entry when available."
+                ),
                 "DRAFT STRATEGY\n"
                 f"Use this framework: {DemoStore._framework_label(framework)}.\n"
                 "If the framework is field note, lead with a concrete scene or observation.\n"
@@ -2727,6 +2883,9 @@ class DemoStore:
     @staticmethod
     def _relevant_memories(state: dict, content: str, limit: int = 4) -> list[dict]:
         """Top Content Bank entries by keyword match, then freshness (spec §3.2 item 4)."""
+        selected = DemoStore._selected_memories(state)
+        if selected:
+            return selected[:limit]
         terms = DemoStore._topic_terms(content)
         freshness_rank = {"fresh": 0, "used": 1, "archived": 2}
         scored = []

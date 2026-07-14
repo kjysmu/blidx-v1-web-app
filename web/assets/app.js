@@ -43,6 +43,8 @@ const ui = {
   authEmailPurpose: "",
   debugActionUrl: "",
   selectedCategory: "insights",
+  sourceCaptureMode: "note",
+  selectedSourceIds: new Set(),
   libraryFilter: "all",
   librarySearch: "",
   notice: linkedinCallbackMessages[linkedinCallback] || "",
@@ -82,8 +84,9 @@ window.addEventListener("unhandledrejection", (event) => {
 
 const api = async (path, options = {}) => {
   const authHeaders = ui.auth?.access_token ? { Authorization: `Bearer ${ui.auth.access_token}` } : {};
+  const contentHeaders = options.body instanceof FormData ? {} : { "Content-Type": "application/json" };
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...authHeaders, ...(options.headers || {}) },
+    headers: { ...contentHeaders, ...authHeaders, ...(options.headers || {}) },
     ...options,
   });
   const payload = await response.json().catch(() => ({}));
@@ -95,6 +98,7 @@ const api = async (path, options = {}) => {
     const error = new Error(message);
     error.status = response.status;
     error.code = typeof detail === "object" ? detail?.code : null;
+    error.entryId = typeof detail === "object" ? detail?.entry_id : null;
     error.retryAfter = Number(response.headers.get("Retry-After") || 0);
     if (response.status === 401 && ui.auth && !["/auth/login", "/auth/register"].includes(path)) {
       endSession(message || "Your session ended. Please sign in again.");
@@ -921,6 +925,15 @@ function draftTimingLabel(post) {
   return `${prefix}: ${date.toLocaleDateString([], { weekday: "short" })} ${formatMessageTime(value)}`;
 }
 
+function draftSourcePanel(post, compact = false) {
+  const sources = (post.sources || []).filter((source) => source.memory_id);
+  if (!sources.length) return "";
+  return `<div class="draft-source-panel ${compact ? "compact" : ""}" data-testid="draft-sources">
+    <strong>Grounded in ${sources.length} Content Bank source${sources.length === 1 ? "" : "s"}</strong>
+    <div>${sources.map((source) => `<span><small>${escapeHtml(source.source_type || "note")}</small>${escapeHtml(source.title || "Content Bank source")}</span>`).join("")}</div>
+  </div>`;
+}
+
 function draftCard(post, compact = true) {
   const publishLabel = ui.integrations?.linkedin?.connected ? "Publish to LinkedIn" : "Copy & open LinkedIn";
   const content = post.content || "";
@@ -928,6 +941,7 @@ function draftCard(post, compact = true) {
   return `<article class="draft-card compact" data-testid="draft-card" data-post="${post.id}">
     <div class="draft-meta"><span class="draft-eyebrow">Draft post</span><span>${draftTimingLabel(post)} · v${post.version} · ${post.char_count}/3,000</span></div>
     <div class="draft-summary"><div><strong>Draft ready: ${escapeHtml(post.title || "Untitled draft")}</strong><p>${excerpt}${content.length > 220 ? "…" : ""}</p><button class="read-more" data-testid="open-draft-workspace" data-draft-review="${post.id}">Open draft workspace</button></div><span class="badge draft">pending review</span></div>
+    ${draftSourcePanel(post, true)}
     <div class="draft-actions">
       <button class="button" data-testid="review-draft" data-draft-review="${post.id}">Review & edit</button>
       <button class="button" data-testid="approve-draft" data-draft-action="approve" data-id="${post.id}">Approve</button>
@@ -954,6 +968,7 @@ function draftReviewModal() {
       </div>
       <div class="draft-review-body">
         <div class="draft-content markdown">${renderMarkdown(post.content || "")}</div>
+        ${draftSourcePanel(post)}
         ${qualityReviewPanel(post)}
         ${voiceFeedbackPanel(post)}
         ${variantRail(post)}
@@ -1086,21 +1101,53 @@ function workflowGuide() {
 
 function renderBank() {
   return `<section class="page">
-    <div class="eyebrow">Personal memory</div><h1>Content Bank</h1>
-    <p class="lead">Capture one useful moment in under a minute. Then keep it useful: edit, mark used, raise priority, or turn it into a draft.</p>
+    <div class="eyebrow">Founder source library</div><h1>Content Bank</h1>
+    <p class="lead">Capture a note or import a document, webpage, or PDF. Select up to five sources so Mira knows exactly what should ground the next angles and draft.</p>
     ${ui.notice ? `<div class="notice">${escapeHtml(ui.notice)}</div>` : ""}
     ${bankSummary()}
-    ${dailyCheckinPrompts()}
-    <div class="card">
-      <h3>What happened today?</h3>
-      <p class="muted small">Good entries are concrete: who/what happened, why it mattered, and what it changed in your thinking.</p>
+    ${sourceSelectionBar()}
+    <div class="card source-capture-card">
+      <div class="card-head"><div><h3>Add source material</h3><p class="muted small">Imported files are converted to text and the original upload is discarded.</p></div><span class="badge draft">5 MB max</span></div>
+      <div class="source-mode-tabs" role="tablist" aria-label="Content Bank source type">
+        ${[["note", "Write note"], ["file", "Upload file"], ["url", "Import link"]].map(([mode, label]) => `<button type="button" role="tab" aria-selected="${ui.sourceCaptureMode === mode}" class="source-mode ${ui.sourceCaptureMode === mode ? "active" : ""}" data-source-mode="${mode}">${label}</button>`).join("")}
+      </div>
       <div class="template-grid">${memoryTemplates.map(([id, icon, label]) => `<button class="template ${ui.selectedCategory === id ? "active" : ""}" data-category="${id}"><span>${icon}</span>${label}</button>`).join("")}</div>
-      <form id="bank-form"><textarea id="bank-text" data-testid="bank-text" placeholder="Example: We launched our first founder test today. The biggest lesson was that workflow ownership matters more than another writing prompt." required minlength="3"></textarea><button class="button" data-testid="bank-save" style="margin-top:10px">Save to Content Bank</button></form>
+      ${sourceCaptureForm()}
     </div>
+    ${ui.sourceCaptureMode === "note" ? dailyCheckinPrompts() : ""}
     <div class="list" style="margin-top:18px">
-      ${ui.state.content_bank.length ? ui.state.content_bank.map(memoryCard).join("") : '<div class="empty">Your Content Bank is empty. Add the first moment above.</div>'}
+      ${ui.state.content_bank.length ? ui.state.content_bank.map(memoryCard).join("") : '<div class="empty">Your Content Bank is empty. Write a note, upload a file, or import a public link above.</div>'}
     </div>
   </section>`;
+}
+
+function sourceCaptureForm() {
+  if (ui.sourceCaptureMode === "file") {
+    return `<form id="source-upload-form" class="source-import-form">
+      <label class="source-drop" for="source-file"><strong>Choose a PDF, DOCX, TXT, or Markdown file</strong><span>Blidx extracts up to 50,000 characters. Scanned PDFs without selectable text are not supported yet.</span><input id="source-file" data-testid="source-file" name="file" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,text/plain,text/markdown" required /></label>
+      <button class="button" data-testid="source-upload">Extract and save</button>
+    </form>`;
+  }
+  if (ui.sourceCaptureMode === "url") {
+    return `<form id="source-url-form" class="source-import-form">
+      <div class="field"><label for="source-url">Public webpage or PDF URL</label><input class="input" id="source-url" data-testid="source-url" type="url" placeholder="https://example.com/article" required /></div>
+      <p class="muted small">Private pages, local-network URLs, and pages that block automated access cannot be imported.</p>
+      <button class="button" data-testid="source-url-import">Import and save</button>
+    </form>`;
+  }
+  return `<form id="bank-form"><textarea id="bank-text" data-testid="bank-text" placeholder="Example: We launched our first founder test today. The biggest lesson was that workflow ownership matters more than another writing prompt." required minlength="3"></textarea><button class="button" data-testid="bank-save" style="margin-top:10px">Save note</button></form>`;
+}
+
+function sourceSelectionBar() {
+  const selected = ui.state.content_bank.filter((entry) => ui.selectedSourceIds.has(entry.id));
+  return `<div class="source-selection-bar ${selected.length ? "active" : ""}" data-testid="source-selection-bar">
+    <div><strong>${selected.length}/5 sources selected for Mira</strong><span>${selected.length ? selected.map((entry) => escapeHtml(entry.source_title || memoryCategoryLabel(entry.category))).join(" · ") : "Choose source cards below before asking for angles or a grounded draft."}</span></div>
+    <div class="source-selection-actions">
+      <button class="button secondary" data-selected-sources-action="angles" ${selected.length ? "" : "disabled"}>Ask for angles</button>
+      <button class="button" data-selected-sources-action="draft" ${selected.length ? "" : "disabled"}>Draft from selection</button>
+      ${selected.length ? '<button class="button ghost" data-selected-sources-action="clear">Clear</button>' : ""}
+    </div>
+  </div>`;
 }
 
 function dailyCheckinPrompts() {
@@ -1128,21 +1175,30 @@ function memoryCard(entry) {
   const category = entry.category || "insights";
   const freshness = entry.freshness || "fresh";
   const potential = entry.content_potential || "medium";
+  const sourceType = entry.source_type || "note";
+  const sourceTitle = entry.source_title || memoryCategoryLabel(category);
+  const selected = ui.selectedSourceIds.has(entry.id);
+  const previewLimit = 520;
+  const preview = (entry.raw_text || "").slice(0, previewLimit);
+  const hasMore = (entry.raw_text || "").length > previewLimit;
   const freshnessAction = freshness === "used" ? ["fresh", "Mark fresh"] : ["used", "Mark used"];
-  return `<div class="list-item memory-card" data-memory-id="${escapeHtml(entry.id)}">
+  return `<div class="list-item memory-card ${selected ? "selected" : ""}" data-memory-id="${escapeHtml(entry.id)}">
     <div class="list-top">
-      <div><strong>${escapeHtml(memoryCategoryLabel(category))}</strong><div class="small muted">${escapeHtml(category)} · ${entry.created_at ? escapeHtml(new Date(entry.created_at).toLocaleDateString()) : "Saved memory"}</div></div>
+      <div><div class="source-title-row"><span class="source-kind">${escapeHtml(sourceType)}</span><strong>${escapeHtml(sourceTitle)}</strong></div><div class="small muted">${escapeHtml(category)} · ${entry.word_count || (entry.raw_text || "").split(/\s+/).filter(Boolean).length} words · ${entry.created_at ? escapeHtml(new Date(entry.created_at).toLocaleDateString()) : "Saved source"}${entry.file_name ? ` · ${escapeHtml(entry.file_name)}` : ""}</div></div>
       <div class="badge-row"><span class="badge ${freshness === "used" ? "scheduled" : freshness === "archived" ? "deleted" : "published"}">${escapeHtml(freshness)}</span><span class="badge ${potential === "high" ? "published" : "draft"}">${escapeHtml(potential)} potential</span></div>
     </div>
-    <p>${escapeHtml(entry.raw_text)}</p>
+    <p class="memory-preview">${escapeHtml(preview)}${hasMore ? "…" : ""}</p>
+    ${hasMore ? `<details class="source-full-text"><summary>Read full source</summary><div>${escapeHtml(entry.raw_text)}</div></details>` : ""}
+    ${entry.source_url ? `<a class="source-origin" href="${escapeHtml(entry.source_url)}" target="_blank" rel="noopener noreferrer">Open original source</a>` : ""}
     <div class="inline-actions">
-      <button class="button secondary" data-prompt="Draft a LinkedIn post from this Content Bank memory: ${escapeHtml(entry.raw_text)}">Draft from this memory</button>
+      <button class="button ${selected ? "ghost" : "secondary"}" data-source-select="${escapeHtml(entry.id)}" aria-pressed="${selected}">${selected ? "Selected for Mira" : "Use for Mira"}</button>
+      <button class="button secondary" data-source-draft="${escapeHtml(entry.id)}">Draft from this source</button>
       <button class="button ghost" data-memory-status="${escapeHtml(freshnessAction[0])}" data-id="${escapeHtml(entry.id)}">${freshnessAction[1]}</button>
       ${potential === "high" ? "" : `<button class="button ghost" data-memory-potential="high" data-id="${escapeHtml(entry.id)}">Mark high potential</button>`}
       <button class="button danger" data-memory-delete="${escapeHtml(entry.id)}">Delete</button>
     </div>
     <details class="memory-edit">
-      <summary>Edit memory</summary>
+      <summary>Edit source text</summary>
       <form data-memory-edit="${escapeHtml(entry.id)}" class="memory-edit-form">
         <textarea name="raw_text" required minlength="3">${escapeHtml(entry.raw_text)}</textarea>
         <div class="form-grid compact">
@@ -1257,6 +1313,7 @@ function libraryItem(post) {
   return `<div class="list-item">
     <div class="list-top"><div><strong>${escapeHtml(post.title)}</strong><p>${escapeHtml(excerpt)}${post.content.length > 220 ? "…" : ""}</p><button class="read-more" data-library-expand="${post.id}">${expanded ? "Hide full draft" : "Show full draft"}</button></div><span class="badge ${post.status}">${post.status}</span></div>
     <div class="small muted" style="margin-top:10px">${post.char_count} characters · v${post.version} · ${escapeHtml(post.generation_provider || "template")} · ${escapeHtml(scheduleSummary(post))}</div>
+    ${draftSourcePanel(post, true)}
     ${expanded ? `<div class="library-full-draft draft-content markdown">${renderMarkdown(post.content || "")}</div>` : ""}
     ${qualityReviewPanel(post, true)}
     <div class="inline-actions">
@@ -1543,9 +1600,9 @@ function renderQA() {
   const quality = ui.state.quality_report || {};
   const mockupChecks = [
     ["Flow 1 · Onboarding", "Partly aligned", "Questionnaire exists; payment and pre-signup localStorage handoff are still deferred."],
-    ["Flow 2 · Draft", "Partly aligned", "Mira chat, angle choice, draft card, edit/save/approve exist; upload document and SSE activity stream are still deferred."],
+    ["Flow 2 · Draft", "Partly aligned", "Mira chat, source-grounded angles, attributed drafts, edit/save/approve exist; SSE activity streaming is still deferred."],
     ["Flow 3 · LinkedIn", "Partly aligned", "Account-bound OAuth publishing and manual fallback work; richer post formats are still deferred."],
-    ["Flow 4 · Check-in / Bank", "Partly aligned", "Daily check-in categories and Content Bank management exist; document/link capture is still MVP-level."],
+    ["Flow 4 · Check-in / Bank", "Mostly aligned", "Notes, PDF/DOCX/TXT uploads, public link imports, previews, duplicate checks, and source selection work."],
     ["Flow 5 · Settings", "Partly aligned", "Settings now follows the handoff section order; exact bottom-sheet edit panels are still deferred."],
     ["Flows 6-8 · Library/Calendar/Progress", "Partly aligned", "Library, Calendar, Analytics exist; detailed post-performance analytics are still limited."],
     ["Navigation", "Aligned", "Bottom tabs are Chat, Bank, Library, Calendar, Settings. Plus menu contains Draft, Daily check-in, Progress, and QA."],
@@ -1554,6 +1611,7 @@ function renderQA() {
     "Each user must authorize LinkedIn once before direct publishing. Manual fallback remains available when OAuth or publishing fails.",
     "Email verification and account recovery are implemented. Real delivery remains disabled until a verified Resend sender and API key are configured in Render.",
     "Mira now records voice ratings and draft decisions, but quality confidence grows only after testers provide real writing samples and feedback.",
+    "Scanned image-only PDFs need OCR before Blidx can extract their text; private or access-controlled webpages cannot be imported.",
     "The UI is more responsive and the navigation now matches the handoff structure, but exact screen-by-screen visual parity is still in progress.",
   ];
   return `<section class="page qa-page" data-testid="qa-page">
@@ -1789,6 +1847,8 @@ function bindView() {
   document.querySelector("#chat-form")?.addEventListener("submit", sendChatMessage);
   bindChatComposer();
   document.querySelector("#bank-form")?.addEventListener("submit", addMemory);
+  document.querySelector("#source-upload-form")?.addEventListener("submit", uploadSourceFile);
+  document.querySelector("#source-url-form")?.addEventListener("submit", importSourceUrl);
   document.querySelector("#profile-form")?.addEventListener("submit", saveProfile);
   document.querySelector("#reset-demo")?.addEventListener("click", resetDemo);
   document.querySelector("#change-password")?.addEventListener("click", showChangePasswordModal);
@@ -1839,6 +1899,21 @@ function bindView() {
   });
   document.querySelectorAll("[data-category]").forEach((button) => {
     button.onclick = () => { ui.selectedCategory = button.dataset.category; render(); };
+  });
+  document.querySelectorAll("[data-source-mode]").forEach((button) => {
+    button.onclick = () => {
+      ui.sourceCaptureMode = button.dataset.sourceMode;
+      render();
+    };
+  });
+  document.querySelectorAll("[data-source-select]").forEach((button) => {
+    button.onclick = () => toggleSourceSelection(button.dataset.sourceSelect);
+  });
+  document.querySelectorAll("[data-source-draft]").forEach((button) => {
+    button.onclick = () => draftFromSource(button.dataset.sourceDraft);
+  });
+  document.querySelectorAll("[data-selected-sources-action]").forEach((button) => {
+    button.onclick = () => handleSelectedSources(button.dataset.selectedSourcesAction);
   });
   document.querySelectorAll("[data-library-filter]").forEach((button) => {
     button.onclick = () => { ui.libraryFilter = button.dataset.libraryFilter; render(); };
@@ -1923,6 +1998,10 @@ async function refresh() {
     }
     state.auth = { authenticated: true, user_id: ui.auth.user_id };
   }
+  const availableSourceIds = new Set((state.content_bank || []).map((entry) => entry.id));
+  ui.selectedSourceIds = new Set(
+    [...ui.selectedSourceIds].filter((sourceId) => availableSourceIds.has(sourceId)),
+  );
   ui.state = state;
   ui.integrations = integrations;
   render();
@@ -2190,7 +2269,10 @@ async function submitPrompt(message, display = null, restoreOnFailure = false) {
   requestChatScroll();
   ui.loading = true; render();
   try {
-    const result = await api("/api/chat/message", { method: "POST", body: JSON.stringify({ message, display }) });
+    const result = await api("/api/chat/message", {
+      method: "POST",
+      body: JSON.stringify({ message, display, source_ids: [...ui.selectedSourceIds] }),
+    });
     ui.state = result.state;
     ui.pendingMessages = [];
     ui.loading = false;
@@ -2221,7 +2303,10 @@ async function createSampleDraft() {
     const topic = latest || `${ui.state.profile.company_name || "my company"} founder insight from this week`;
     await api("/api/chat/message", {
       method: "POST",
-      body: JSON.stringify({ message: `Draft a post about ${topic}` }),
+      body: JSON.stringify({
+        message: `Draft a post about ${topic}`,
+        source_ids: [...ui.selectedSourceIds],
+      }),
     });
     ui.loading = false;
     requestChatScroll();
@@ -2238,12 +2323,116 @@ async function addMemory(event) {
   const raw_text = document.querySelector("#bank-text").value;
   try {
     const entry = await api("/api/content-bank", { method: "POST", body: JSON.stringify({ raw_text, category: ui.selectedCategory }) });
-    ui.notice = `Saved to Content Bank · ${entry.category} · Fresh`;
+    ui.selectedSourceIds.add(entry.id);
+    ui.notice = `Saved and selected for Mira · ${entry.category} · Fresh`;
     await refresh();
-    ui.notice = `Saved to Content Bank · ${entry.category} · Fresh`; render();
+    ui.notice = `Saved and selected for Mira · ${entry.category} · Fresh`; render();
   } catch (error) {
     showToast(error.message);
   }
+}
+
+async function uploadSourceFile(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const file = form.querySelector("#source-file")?.files?.[0];
+  if (!file) return;
+  const submit = form.querySelector('[data-testid="source-upload"]');
+  const originalLabel = submit.textContent;
+  submit.disabled = true;
+  submit.textContent = "Extracting…";
+  const body = new FormData();
+  body.append("file", file);
+  body.append("category", ui.selectedCategory);
+  try {
+    const entry = await api("/api/content-bank/upload", { method: "POST", body });
+    ui.selectedSourceIds.add(entry.id);
+    ui.notice = `${entry.source_title} imported and selected for Mira.`;
+    await refresh();
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    if (submit.isConnected) {
+      submit.disabled = false;
+      submit.textContent = originalLabel;
+    }
+  }
+}
+
+async function importSourceUrl(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const url = form.querySelector("#source-url")?.value?.trim();
+  if (!url) return;
+  const submit = form.querySelector('[data-testid="source-url-import"]');
+  const originalLabel = submit.textContent;
+  submit.disabled = true;
+  submit.textContent = "Importing…";
+  try {
+    const entry = await api("/api/content-bank/import-url", {
+      method: "POST",
+      body: JSON.stringify({ url, category: ui.selectedCategory }),
+    });
+    ui.selectedSourceIds.add(entry.id);
+    ui.notice = `${entry.source_title} imported and selected for Mira.`;
+    await refresh();
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    if (submit.isConnected) {
+      submit.disabled = false;
+      submit.textContent = originalLabel;
+    }
+  }
+}
+
+function toggleSourceSelection(id) {
+  if (ui.selectedSourceIds.has(id)) {
+    ui.selectedSourceIds.delete(id);
+  } else {
+    if (ui.selectedSourceIds.size >= 5) {
+      showToast("Select up to five sources for one Mira request.");
+      return;
+    }
+    ui.selectedSourceIds.add(id);
+  }
+  render();
+}
+
+function handleSelectedSources(action) {
+  if (action === "clear") {
+    ui.selectedSourceIds.clear();
+    render();
+    return;
+  }
+  if (!ui.selectedSourceIds.size) return;
+  ui.tab = "chat";
+  render();
+  window.scrollTo(0, 0);
+  if (action === "angles") {
+    submitPrompt(
+      "Give me 3 angles grounded in my selected Content Bank sources.",
+      "Give me angles from my selected sources",
+    );
+  } else {
+    submitPrompt(
+      "Draft a LinkedIn post grounded in my selected Content Bank sources.",
+      "Draft from my selected sources",
+    );
+  }
+}
+
+function draftFromSource(id) {
+  const entry = ui.state.content_bank.find((item) => item.id === id);
+  if (!entry) return;
+  ui.selectedSourceIds = new Set([id]);
+  ui.tab = "chat";
+  render();
+  window.scrollTo(0, 0);
+  submitPrompt(
+    "Draft a LinkedIn post grounded in my selected Content Bank source.",
+    `Draft from “${entry.source_title || memoryCategoryLabel(entry.category)}”`,
+  );
 }
 
 async function updateMemory(id, updates) {
@@ -2268,6 +2457,7 @@ async function deleteMemory(id) {
   const entry = ui.state.content_bank.find((item) => item.id === id);
   try {
     await api(`/api/content-bank/${id}`, { method: "DELETE" });
+    ui.selectedSourceIds.delete(id);
     await refresh();
     showToast(
       "Memory deleted",
@@ -2280,10 +2470,11 @@ async function deleteMemory(id) {
 
 async function restoreMemory(entry) {
   try {
-    await api("/api/content-bank", {
+    const restored = await api("/api/content-bank", {
       method: "POST",
       body: JSON.stringify({ raw_text: entry.raw_text, category: entry.category }),
     });
+    ui.selectedSourceIds.add(restored.id);
     await refresh();
     showToast("Memory restored");
   } catch (error) {
