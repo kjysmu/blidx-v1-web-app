@@ -1922,6 +1922,11 @@ class DemoStore:
                 for variant in topic_specific
                 if variant["content"].strip() != main_content.strip()
             ]
+        ai_variants = DemoStore._generate_ai_variants(state, topic, main_content)
+        if ai_variants:
+            return ai_variants
+        if not DemoStore._is_content_workflow_topic(topic):
+            return DemoStore._grounded_variants_from_main(topic, main_content)
         memory_entry = DemoStore._relevant_memory(state, topic)
         use_company = DemoStore._should_use_company_anchor(state, topic, memory_entry)
         company = profile.get("company_name") or "my company"
@@ -1999,6 +2004,193 @@ class DemoStore:
             for variant in variants
             if variant["content"].strip() != main_content.strip()
         ]
+
+    @staticmethod
+    def _generate_ai_variants(
+        state: dict,
+        topic: str,
+        main_content: str,
+    ) -> list[dict]:
+        provider = ClaudeProvider()
+        if not provider.configured:
+            return []
+
+        selected_sources = DemoStore._selected_memories(state)
+        source_context = [
+            {
+                "title": source.get("source_title") or "Content Bank note",
+                "text": (source.get("raw_text") or "")[:4_000],
+            }
+            for source in selected_sources[:5]
+        ]
+        prompt = "\n\n".join(
+            [
+                "TOPIC\n" + topic,
+                "CURRENT MAIN DRAFT\n" + main_content,
+                "SELECTED SOURCE EVIDENCE\n"
+                + (json.dumps(source_context, indent=2) if source_context else "No source evidence was selected."),
+                "VOICE FINGERPRINT\n" + VoiceProfileService.prompt_context(state.get("profile", {})),
+                "Create exactly three genuinely different LinkedIn post variants. Each variant must remain "
+                "about the TOPIC and preserve at least two concrete subject details from the main draft or "
+                "selected evidence. Change the editorial direction and structure, not the subject. Never turn "
+                "an unrelated topic into a post about content creation, founder workflows, or Blidx. Do not "
+                "invent a personal event, relationship, quotation, number, or factual claim.",
+            ]
+        )
+        system_prompt = (
+            "You are Mira, a careful LinkedIn editor. Return only valid JSON with no markdown fence. "
+            "The response must be an array of exactly three objects using this schema: "
+            '[{"label":"short title","positioning":"one sentence direction","content":"full post"}]. '
+            "Keep every post under 2,600 characters. The alternatives must be publishable posts, not notes "
+            "about how to write a post."
+        )
+        try:
+            response = provider.generate(prompt, system_prompt)
+        except (httpx.HTTPError, RuntimeError, ValueError):
+            return []
+        return DemoStore._parse_ai_variants(response, topic, main_content)
+
+    @staticmethod
+    def _parse_ai_variants(
+        response: str,
+        topic: str,
+        main_content: str,
+    ) -> list[dict]:
+        start = response.find("[")
+        end = response.rfind("]")
+        if start < 0 or end <= start:
+            return []
+        try:
+            payload = json.loads(response[start : end + 1])
+        except (json.JSONDecodeError, TypeError):
+            return []
+        if not isinstance(payload, list):
+            return []
+
+        variants = []
+        for index, item in enumerate(payload[:3], start=1):
+            if not isinstance(item, dict):
+                continue
+            content = str(item.get("content") or "").strip()[:3_000]
+            if not content or content == main_content.strip():
+                continue
+            if not DemoStore._variant_is_relevant(topic, main_content, content):
+                continue
+            label = str(item.get("label") or f"Alternative {index}").strip()[:80]
+            positioning = str(item.get("positioning") or "A different editorial direction.").strip()[:180]
+            variants.append(
+                {
+                    "id": f"ai_alternative_{index}",
+                    "label": label,
+                    "positioning": positioning,
+                    "content": content,
+                    "char_count": len(content),
+                }
+            )
+        return variants if len(variants) == 3 else []
+
+    @staticmethod
+    def _variant_is_relevant(topic: str, main_content: str, content: str) -> bool:
+        topic_terms = DemoStore._topic_terms(topic)
+        content_terms = DemoStore._topic_terms(content)
+        if topic_terms and not topic_terms & content_terms:
+            return False
+
+        generic_terms = {
+            "audience", "content", "draft", "founder", "insight", "lesson",
+            "point", "problem", "system", "thinking", "useful", "workflow", "work",
+        }
+        anchor_terms = DemoStore._topic_terms(main_content) - topic_terms - generic_terms
+        required_overlap = min(2, len(anchor_terms))
+        if required_overlap and len(anchor_terms & content_terms) < required_overlap:
+            return False
+
+        numeric_pattern = r"\b\d+(?:[.,]\d+)?%?(?![\d/.)}:])"
+        variant_numbers = set(re.findall(numeric_pattern, content))
+        supported_numbers = set(re.findall(numeric_pattern, main_content))
+        if variant_numbers - supported_numbers:
+            return False
+
+        if not DemoStore._is_content_workflow_topic(topic):
+            unrelated_patterns = (
+                "founder-led content",
+                "not mainly a writing problem",
+                "capture the real moment",
+                "turn real work into a clear point of view",
+            )
+            if any(pattern in content.lower() for pattern in unrelated_patterns):
+                return False
+        return True
+
+    @staticmethod
+    def _grounded_variants_from_main(topic: str, main_content: str) -> list[dict]:
+        paragraphs = [
+            paragraph.strip()
+            for paragraph in re.split(r"\n\s*\n", main_content)
+            if paragraph.strip()
+        ]
+        sentences = [
+            sentence.strip()
+            for sentence in re.split(r"(?<=[.!?])\s+", " ".join(paragraphs))
+            if sentence.strip()
+        ]
+        if not paragraphs or not sentences:
+            return []
+
+        closing = paragraphs[-1] if "?" in paragraphs[-1] else ""
+        concise_parts = paragraphs[: min(4, len(paragraphs))]
+        if closing and closing not in concise_parts:
+            concise_parts.append(closing)
+        concise = "\n\n".join(concise_parts)
+
+        subject = DemoStore._polish_title(topic)
+        observation_parts = [f"The part of {subject} worth paying attention to:"]
+        observation_parts.extend(paragraphs[1:5] or paragraphs[:4])
+        if closing and closing not in observation_parts:
+            observation_parts.append(closing)
+        observation = "\n\n".join(observation_parts)
+
+        key_sentences = sentences[:3]
+        key_points = f"What stands out to me about {subject}:\n\n" + "\n".join(
+            f"{index}/ {sentence}" for index, sentence in enumerate(key_sentences, start=1)
+        )
+        if closing and closing not in key_points:
+            key_points += "\n\n" + closing
+
+        variants = [
+            {
+                "id": "concise_version",
+                "label": "Concise version",
+                "positioning": "Keep the original subject and remove the longer setup.",
+                "content": concise,
+            },
+            {
+                "id": "observation_led",
+                "label": "Observation-led",
+                "positioning": "Lead with the central observation from the main draft.",
+                "content": observation,
+            },
+            {
+                "id": "key_points",
+                "label": "Key points",
+                "positioning": "Reshape the main draft into three grounded takeaways.",
+                "content": key_points,
+            },
+        ]
+        return [
+            {**variant, "char_count": len(variant["content"])}
+            for variant in variants
+            if variant["content"].strip() != main_content.strip()
+            and DemoStore._variant_is_relevant(topic, main_content, variant["content"])
+        ]
+
+    @staticmethod
+    def _is_content_workflow_topic(topic: str) -> bool:
+        terms = DemoStore._topic_terms(topic)
+        return bool(
+            terms & {"content", "linkedin", "writing", "writer", "posting", "posts"}
+            and terms & {"founder", "workflow", "system", "strategy", "creation", "marketing"}
+        )
 
     @staticmethod
     def _topic_specific_variants(topic: str) -> list[dict]:
@@ -2494,16 +2686,85 @@ class DemoStore:
             "you may use the pianist detail as a small personal lens, but the post must still clearly discuss AI and music. "
             "Do not mention Blidx or the user's company unless the user explicitly asks, the topic is about that company, "
             "or the relevant Content Bank context is about that company. "
-            "Do not invent concrete facts, names, statistics, events, or credentials that are not in the context."
+            "Do not invent concrete facts, names, statistics, events, or credentials that are not in the context. "
+            "If the context does not contain a first-person event, never fabricate one with phrases such as "
+            "'my nephew', 'last weekend', 'I attended', or an invented collection size. Use an observational "
+            "point of view instead. Before returning, silently remove every unsupported personal detail and number."
         )
+        context_package = DemoStore._context_package(state, topic)
         try:
-            return (
-                provider.generate(DemoStore._context_package(state, topic), system_prompt),
-                f"Anthropic {provider.model}",
-                None,
-            )
+            draft = provider.generate(context_package, system_prompt)
+            unsupported = DemoStore._unsupported_ai_details(state, topic, draft)
+            if unsupported:
+                repair_prompt = "\n\n".join(
+                    [
+                        context_package,
+                        "UNSAFE DRAFT TO REPAIR\n" + draft,
+                        "GROUNDING FAILURES\n" + "\n".join(f"- {item}" for item in unsupported),
+                        "Rewrite the post now. Preserve the requested topic and useful argument, but remove or "
+                        "replace every unsupported personal scene, relationship, date, and number. Return only "
+                        "the repaired LinkedIn post.",
+                    ]
+                )
+                draft = provider.generate(repair_prompt, system_prompt)
+                remaining = DemoStore._unsupported_ai_details(state, topic, draft)
+                if remaining:
+                    return None, "template", "AI draft failed grounding safety checks."
+            return draft, f"Anthropic {provider.model}", None
         except (httpx.HTTPError, RuntimeError, ValueError) as exc:
             return None, "template", str(exc)[:300]
+
+    @staticmethod
+    def _unsupported_ai_details(
+        state: dict,
+        topic: str,
+        content: str,
+    ) -> list[str]:
+        profile = state.get("profile") or {}
+        profile_evidence = " ".join(
+            str(profile.get(field) or "")
+            for field in (
+                "first_name",
+                "role",
+                "company_name",
+                "industry",
+                "company_description",
+                "expertise",
+            )
+        )
+        selected = DemoStore._selected_memories(state)
+        relevant = DemoStore._relevant_memory(state, topic)
+        source_entries = selected or ([relevant] if relevant else [])
+        evidence = " ".join(
+            [
+                topic,
+                profile_evidence,
+                *(entry.get("raw_text") or "" for entry in source_entries),
+            ]
+        ).lower()
+
+        violations = []
+        numeric_pattern = r"\b\d+(?:[.,]\d+)?%?(?![\d/.)}:])"
+        unsupported_numbers = sorted(
+            set(re.findall(numeric_pattern, content))
+            - set(re.findall(numeric_pattern, evidence))
+        )
+        if unsupported_numbers:
+            violations.append("Unsupported numbers: " + ", ".join(unsupported_numbers[:5]))
+
+        personal_patterns = (
+            r"\bmy (?:nephew|niece|son|daughter|husband|wife|friend|client|customer)\b",
+            r"\b(?:last|this) (?:weekend|week|month|night|year)\b",
+            r"\bi (?:attended|bought|met|spoke with|tested|visited|watched)\b",
+        )
+        for pattern in personal_patterns:
+            for match in re.findall(pattern, content.lower()):
+                phrase = match if isinstance(match, str) else " ".join(match)
+                if phrase and phrase not in evidence:
+                    label = f"Unsupported personal detail: {phrase}"
+                    if label not in violations:
+                        violations.append(label)
+        return violations
 
     @staticmethod
     def _generate_ai_revision(state: dict, post: dict, instructions: str) -> str | None:

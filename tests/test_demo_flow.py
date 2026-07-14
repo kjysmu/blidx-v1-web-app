@@ -1,6 +1,10 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
+from app.demo_store import DemoStore
+from app.integrations.llm import ClaudeProvider
 from app.main import app
 
 client = TestClient(app)
@@ -256,6 +260,143 @@ def test_specific_moment_angle_keeps_ai_composer_as_the_subject(monkeypatch):
         assert "specific moment around" not in variant_content
 
     client.post("/api/reset")
+
+
+def test_pokemon_variants_stay_grounded_in_the_pokemon_draft(monkeypatch):
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
+    client.post("/api/reset")
+
+    first = client.post(
+        "/api/chat/message",
+        json={"message": "draft about pokemon"},
+    ).json()
+    assert first["actions"] == ["context_requested"]
+
+    payload = client.post(
+        "/api/chat/message",
+        json={"message": "just draft it"},
+    ).json()
+    post = payload["post"]
+
+    assert post["topic"].lower() == "pokemon"
+    assert len(post["variants"]) == 3
+    assert {variant["id"] for variant in post["variants"]} == {
+        "concise_version",
+        "observation_led",
+        "key_points",
+    }
+    for variant in post["variants"]:
+        content = variant["content"].lower()
+        assert "pokemon" in content
+        assert "not mainly a writing problem" not in content
+        assert "founder-led content" not in content
+        assert "capture the real moment" not in content
+        assert "turn real work into a clear point of view" not in content
+
+    client.post("/api/reset")
+
+
+def test_generic_ai_variants_are_rejected_for_an_unrelated_topic():
+    main = (
+        "Pokemon cards reward curiosity about generations, rarity, and the stories behind each character.\n\n"
+        "That depth is what makes the collection interesting."
+    )
+    response = json.dumps(
+        [
+            {
+                "label": "Founder story",
+                "positioning": "Turn it into a lesson.",
+                "content": "Pokemon is not mainly a writing problem. It is an operating problem for founders.",
+            },
+            {
+                "label": "Industry POV",
+                "positioning": "Make the market point.",
+                "content": "Pokemon shows why founder-led content needs a reliable workflow.",
+            },
+            {
+                "label": "Practical lesson",
+                "positioning": "Offer a framework.",
+                "content": "Pokemon: 1/ Capture the real moment. 2/ Choose the audience. 3/ Draft the lesson.",
+            },
+        ]
+    )
+
+    assert DemoStore._parse_ai_variants(response, "pokemon", main) == []
+
+
+def test_ai_draft_repairs_invented_personal_details(monkeypatch):
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
+    responses = iter(
+        [
+            (
+                "My nephew showed me his 152 Pokemon cards last weekend.\n\n"
+                "That collection changed how I think about deep interests."
+            ),
+            (
+                "Pokemon rewards a kind of sustained curiosity.\n\n"
+                "Learning the generations, characters, and rules can turn a casual interest into real depth."
+            ),
+        ]
+    )
+    prompts = []
+
+    def fake_generate(self, prompt, system_prompt=None):
+        prompts.append(prompt)
+        return next(responses)
+
+    monkeypatch.setattr(ClaudeProvider, "generate", fake_generate)
+    client.post("/api/reset")
+    state = client.get("/api/state").json()
+
+    draft, provider, error = DemoStore._generate_ai_draft(state, "pokemon")
+
+    assert provider.startswith("Anthropic")
+    assert error is None
+    assert "Pokemon rewards" in draft
+    assert "nephew" not in draft.lower()
+    assert len(prompts) == 2
+    assert "GROUNDING FAILURES" in prompts[1]
+    client.post("/api/reset")
+
+
+def test_grounding_audit_flags_unsupported_pokemon_story():
+    state = {
+        "profile": {
+            "first_name": "Jae",
+            "role": "Founder",
+            "company_name": "Blidx",
+            "industry": "Software",
+            "company_description": "Founder content software",
+            "expertise": [],
+        },
+        "content_bank": [],
+        "mira_workflow": {"grounded_source_ids": []},
+    }
+    violations = DemoStore._unsupported_ai_details(
+        state,
+        "pokemon",
+        "My nephew showed me 152 Pokemon cards last weekend.",
+    )
+
+    assert any("152" in item for item in violations)
+    assert any("my nephew" in item for item in violations)
+    assert any("last weekend" in item for item in violations)
+
+
+def test_grounding_audit_allows_numbered_list_markers():
+    state = {
+        "profile": {},
+        "content_bank": [],
+        "mira_workflow": {"grounded_source_ids": []},
+    }
+
+    violations = DemoStore._unsupported_ai_details(
+        state,
+        "pokemon",
+        "1. Learn the rules.\n2) Notice the patterns.\n3/ Keep exploring Pokemon.",
+    )
+
+    assert violations == []
 
 
 def test_just_draft_it_never_becomes_the_draft_topic_without_prior_subject(monkeypatch):
