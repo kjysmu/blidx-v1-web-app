@@ -19,6 +19,7 @@ from app.integrations.llm import ClaudeProvider
 from app.models.user import User
 from app.repositories.workspace_repository import workspace_repository
 from app.services.draft_quality_service import DraftQualityService
+from app.services.voice_profile_service import VoiceProfileService
 
 
 class CurrentUserContext:
@@ -83,6 +84,7 @@ class DemoStore:
                 "expertise": ["AI / Machine Learning", "Product Strategy"],
                 "writing_style": "",
                 "writing_samples": [],
+                "voice_profile": VoiceProfileService.analyze([]),
                 "preferred_structure": "Hook, context, lesson, reflective question",
                 "avoided_phrases": ["game changer", "unlock", "10x"],
                 "cta_style": "Reflective question",
@@ -210,6 +212,9 @@ class DemoStore:
         with self.lock:
             state = self._read()
             state["profile"].update(profile)
+            state["profile"]["voice_profile"] = VoiceProfileService.analyze(
+                state["profile"].get("writing_samples")
+            )
             self._write(state)
             return deepcopy(state["profile"])
 
@@ -217,6 +222,9 @@ class DemoStore:
         with self.lock:
             state = self._read()
             state["profile"].update(profile)
+            state["profile"]["voice_profile"] = VoiceProfileService.analyze(
+                state["profile"].get("writing_samples")
+            )
             state["onboarding_completed"] = True
             if first_memory and first_memory.strip():
                 state["content_bank"].insert(0, self._memory_entry(first_memory))
@@ -653,6 +661,20 @@ class DemoStore:
             if post is None:
                 return None
 
+            post["quality_review"] = self._quality_review(state, post)
+            quality_gate = post["quality_review"].get("quality_gate") or {}
+            if quality_gate.get("status") == "blocked":
+                self._write(state)
+                return {
+                    "published": False,
+                    "mode": "quality_blocked",
+                    "message": (
+                        "Mira found a topic or factual-safety issue. Review the flagged items before publishing."
+                    ),
+                    "blockers": quality_gate.get("blockers") or [],
+                    "post": deepcopy(post),
+                }
+
             linkedin = state.get("linkedin") or {}
             access_token = self._linkedin_access_token(linkedin)
             if not access_token:
@@ -853,7 +875,7 @@ class DemoStore:
 
     def seed_test_scenario(self) -> dict:
         with self.lock:
-            state = self._malia_test_state()
+            state = self._normalize_state(self._malia_test_state())
             self._write(state)
             return self._public_state(state)
 
@@ -982,6 +1004,7 @@ class DemoStore:
         profile = state.setdefault("profile", {})
         profile.setdefault("writing_style", "")
         profile.setdefault("writing_samples", [])
+        profile["voice_profile"] = VoiceProfileService.analyze(profile["writing_samples"])
         profile.setdefault(
             "preferred_structure",
             "Hook, context, lesson, reflective question",
@@ -2453,6 +2476,7 @@ class DemoStore:
             "The draft must sound like the user, not like a generic AI assistant. "
             "Use first person when appropriate. Keep it publishable, specific, and under 2,600 characters. "
             "Use the user's writing samples and voice controls as the highest-priority style guide. "
+            "Treat the derived voice fingerprint as rhythm constraints, but never copy a sentence from a sample. "
             "Prefer concrete founder moments over broad claims. Avoid hype, cliches, and any phrases listed as avoided. "
             "Vary the structure. Do not use the same hook-context-lesson-question sequence every time. "
             "Choose the format that fits the topic: field note, sharp observation, practical list, founder memo, or reflective essay. "
@@ -2491,7 +2515,8 @@ class DemoStore:
             "You are Mira, the content operating partner inside Blidx. "
             "Revise the LinkedIn draft according to the user's instructions. "
             "Return only the revised post text, with no preamble or markdown fence. "
-            "Keep the user's facts intact, do not invent specifics, and stay under 2,600 characters."
+            "Keep the user's facts intact, do not invent specifics, and stay under 2,600 characters. "
+            "Preserve the founder's calibrated sentence rhythm and paragraph style unless the user asks to change them."
         )
         post_source_ids = set(post.get("source_ids") or [])
         revision_sources = [
@@ -2502,6 +2527,8 @@ class DemoStore:
         prompt = "\n\n".join(
             [
                 "USER PROFILE\n" + json.dumps(state.get("profile", {}), indent=2),
+                "VOICE FINGERPRINT\n" + VoiceProfileService.prompt_context(state.get("profile", {})),
+                "LEARNED DRAFT FEEDBACK\n" + DraftQualityService.feedback_context(state),
                 "CONTENT BANK\n" + json.dumps(revision_sources, indent=2),
                 "CURRENT DRAFT\n" + post.get("content", ""),
                 "REVISION INSTRUCTIONS\n" + instructions.strip(),
@@ -2594,6 +2621,7 @@ class DemoStore:
                 f"CTA style: {profile.get('cta_style') or 'Not specified'}\n"
                 f"Phrases to avoid: {', '.join(avoided) if avoided else 'None specified'}\n"
                 "Use writing samples as the strongest style signal when present.",
+                "VOICE FINGERPRINT\n" + VoiceProfileService.prompt_context(profile),
                 "LINKEDIN ABOUT / WRITING STYLE\n"
                 + (profile.get("writing_style") or "No writing style provided yet."),
                 "VOICE BENCHMARK\n"
@@ -2647,6 +2675,7 @@ class DemoStore:
         post_id: str,
         sentiment: str,
         reason: str | None = None,
+        tags: list[str] | None = None,
     ) -> dict | None:
         with self.lock:
             state = self._read()
@@ -2659,6 +2688,7 @@ class DemoStore:
                 event="voice_rating",
                 reason=reason,
                 sentiment=sentiment,
+                metadata={"tags": tags or []},
             )
             phrase = "matched the founder's voice" if sentiment == "sounds_like_me" else "needs a different voice"
             self._record_signal(state, f"Voice feedback: draft {phrase}. {(reason or '')[:100]}".strip())

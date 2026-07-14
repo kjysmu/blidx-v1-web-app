@@ -988,17 +988,21 @@ function draftReviewModal() {
 function qualityReviewPanel(post, compact = false) {
   const review = post.quality_review || buildClientQualityReview(post);
   const checks = review.checks || [];
-  const needs = review.needs || checks.filter((check) => !check.passed).map((check) => check.label);
+  const gate = review.quality_gate || {};
+  const gateIssues = [...(gate.blockers || []), ...(gate.warnings || [])];
+  const needs = [...new Set([...(review.needs || checks.filter((check) => !check.passed).map((check) => check.label)), ...gateIssues])];
   const dimensions = review.dimensions || [];
+  const gateLabel = gate.status === "blocked" ? "Blocked" : gate.status === "review" || needs.length ? "Needs review" : "Ready";
   return `<div class="quality-review ${compact ? "compact" : ""}">
     <div class="quality-head">
       <strong>${review.readiness_percent == null ? escapeHtml(review.label || `Draft readiness: ${review.score || 0}/${review.max_score || checks.length || 5}`) : `Mira quality: ${review.readiness_percent}%`}</strong>
-      <span class="badge ${needs.length ? "draft" : "published"}">${needs.length ? "Needs review" : "Ready"}</span>
+      <span class="badge ${gate.status === "blocked" || needs.length ? "draft" : "published"}">${gateLabel}</span>
     </div>
     ${!compact && dimensions.length ? `<div class="quality-dimensions">${dimensions.map((item) => `<div><span>${escapeHtml(item.label)}</span><strong>${item.score}/${item.max_score}</strong><small>${escapeHtml(item.detail || "")}</small></div>`).join("")}</div>` : ""}
     <div class="quality-checks">
       ${checks.map((check) => `<div class="quality-check ${check.passed ? "passed" : "missing"}"><span>${check.passed ? "✓" : "○"}</span><strong>${escapeHtml(check.label)}</strong>${compact ? "" : `<small>${escapeHtml(check.detail || "")}</small>`}</div>`).join("")}
     </div>
+    ${gate.status === "blocked" ? `<div class="quality-gate-blocked"><strong>Publishing paused</strong><span>Resolve ${escapeHtml((gate.blockers || []).join(", "))} before sending this draft to LinkedIn.</span></div>` : ""}
     ${needs.length ? `<div class="quality-needs">Needs improvement: ${escapeHtml(needs.join(", "))}</div>` : `<div class="quality-needs ready">Looks ready for human review.</div>`}
   </div>`;
 }
@@ -1724,6 +1728,30 @@ function timezoneRow(p) {
   </div>`;
 }
 
+function voiceCalibrationCard(p) {
+  const voice = p.voice_profile || {};
+  const sampleCount = voice.sample_count || 0;
+  const totalWords = voice.total_words || 0;
+  const calibrated = voice.readiness === "calibrated";
+  const progress = Math.round((Math.min(sampleCount / 3, 1) + Math.min(totalWords / 150, 1)) * 50);
+  const statusLabel = calibrated ? "Calibrated" : sampleCount ? "Learning" : "Not trained";
+  return `<div class="voice-calibration-card" data-testid="voice-calibration">
+    <div class="voice-calibration-head">
+      <div><div class="eyebrow">Voice calibration</div><h3>Mira should sound like you, not a template</h3></div>
+      <span class="badge ${calibrated ? "published" : "draft"}">${statusLabel}</span>
+    </div>
+    <p>${escapeHtml(voice.summary || "Add three real posts so Mira can learn your rhythm instead of guessing.")}</p>
+    <div class="voice-progress" aria-label="Voice calibration ${progress}%"><span style="width:${progress}%"></span></div>
+    <div class="voice-metrics">
+      <div><strong>${sampleCount}</strong><span>writing sample${sampleCount === 1 ? "" : "s"}</span></div>
+      <div><strong>${totalWords}</strong><span>sample words</span></div>
+      <div><strong>${escapeHtml(sampleCount ? voice.sentence_length || "unknown" : "unknown")}</strong><span>sentence rhythm</span></div>
+      <div><strong>${escapeHtml((sampleCount ? voice.preferred_opening || "unknown" : "unknown").replaceAll("_", " "))}</strong><span>opening tendency</span></div>
+    </div>
+    <button type="button" class="button secondary" id="focus-writing-samples">${sampleCount ? "Improve calibration" : "Add writing samples"}</button>
+  </div>`;
+}
+
 function settingsProfileForm(p) {
   return `<div class="settings-section">
     <div class="settings-header">Your Profile</div>
@@ -1735,6 +1763,7 @@ function settingsProfileForm(p) {
         </div>
         <span class="badge ${ui.state.onboarding_completed ? "published" : "draft"}">${ui.state.onboarding_completed ? "Saved" : "Needs setup"}</span>
       </div>
+      ${voiceCalibrationCard(p)}
       <form class="form-grid" id="profile-form">
         ${field("First name", "first_name", p.first_name)}
         ${field("Role", "role", p.role)}
@@ -1746,7 +1775,7 @@ function settingsProfileForm(p) {
         <div class="field"><label>Posting frequency</label><select name="posting_frequency"><option value="1-2x_per_week" ${p.posting_frequency === "1-2x_per_week" ? "selected" : ""}>1–2× per week</option><option value="3-4x_per_week" ${p.posting_frequency === "3-4x_per_week" ? "selected" : ""}>3–4× per week</option><option value="5+_per_week" ${p.posting_frequency === "5+_per_week" ? "selected" : ""}>5+ per week</option></select></div>
         ${field("Tone", "tone", p.tone)}
         ${textAreaField("Writing style notes", "writing_style", p.writing_style || "", "Example: Reflective, direct, specific, no hype. I like numbered points and founder lessons.", true)}
-        ${textAreaField("Writing samples", "writing_samples", (p.writing_samples || []).join("\n\n---\n\n"), "Paste 1-3 LinkedIn posts or writing examples. Separate samples with ---.", true)}
+        ${textAreaField("Writing samples", "writing_samples", (p.writing_samples || []).join("\n\n---\n\n"), "Paste 3-5 real posts you wrote. Separate samples with ---.", true)}
         ${field("Preferred structure", "preferred_structure", p.preferred_structure || "Hook, context, lesson, reflective question", true)}
         ${field("Phrases to avoid (comma separated)", "avoided_phrases", (p.avoided_phrases || []).join(", "), true)}
         ${field("CTA style", "cta_style", p.cta_style || "Reflective question", true)}
@@ -1932,6 +1961,13 @@ function bindView() {
   document.querySelectorAll("[data-draft-feedback]").forEach((button) => {
     button.onclick = () => handleVoiceFeedback(button.dataset.id, button.dataset.draftFeedback);
   });
+  document.querySelectorAll("[data-feedback-tag]").forEach((button) => {
+    button.onclick = () => {
+      const selected = button.getAttribute("aria-pressed") === "true";
+      button.setAttribute("aria-pressed", selected ? "false" : "true");
+      button.classList.toggle("selected", !selected);
+    };
+  });
   document.querySelectorAll("[data-library-expand]").forEach((button) => {
     button.onclick = () => toggleLibraryPost(button.dataset.libraryExpand);
   });
@@ -1957,6 +1993,11 @@ function bindView() {
   document.querySelector("#close-draft-review")?.addEventListener("click", () => {
     ui.reviewDraftId = null;
     render();
+  });
+  document.querySelector("#focus-writing-samples")?.addEventListener("click", () => {
+    const input = document.querySelector('textarea[name="writing_samples"]');
+    input?.scrollIntoView({ behavior: "smooth", block: "center" });
+    input?.focus({ preventScroll: true });
   });
   document.querySelectorAll("[data-memory-status]").forEach((button) => {
     button.onclick = () => updateMemory(button.dataset.id, { freshness: button.dataset.memoryStatus });
@@ -2626,22 +2667,31 @@ async function useVariant(id, variantId) {
 
 function handleVoiceFeedback(id, sentiment) {
   if (sentiment === "sounds_like_me") {
-    sendDraftFeedback(id, sentiment, null);
+    sendDraftFeedback(id, sentiment, null, []);
     return;
   }
-  ui.modal = `<div class="modal-backdrop"><div class="modal"><div class="modal-head"><h3>What feels off?</h3><button class="icon-button" data-modal-close="true">Close</button></div><p class="muted">A short reason helps Mira avoid the same miss in your next draft.</p><textarea id="voice-feedback-reason" placeholder="Try: Too polished, too formal, wrong point of view, or not specific enough."></textarea><div class="modal-actions"><button class="button ghost" data-modal-close="true">Cancel</button><button class="button" id="submit-voice-feedback">Save feedback</button></div></div></div>`;
+  const tags = [
+    ["too_generic", "Too generic"],
+    ["too_formal", "Too formal"],
+    ["too_polished", "Too polished"],
+    ["wrong_emphasis", "Wrong emphasis"],
+    ["too_long", "Too long"],
+    ["too_salesy", "Too salesy"],
+  ];
+  ui.modal = `<div class="modal-backdrop"><div class="modal"><div class="modal-head"><h3>What feels off?</h3><button class="icon-button" data-modal-close="true">Close</button></div><p class="muted">Choose the closest signals. Mira will turn them into drafting rules for the next post.</p><div class="feedback-tag-grid">${tags.map(([value, label]) => `<button type="button" class="feedback-tag" data-feedback-tag="${value}" aria-pressed="false">${label}</button>`).join("")}</div><textarea id="voice-feedback-reason" placeholder="Optional: tell Mira what you would say differently."></textarea><div class="modal-actions"><button class="button ghost" data-modal-close="true">Cancel</button><button class="button" id="submit-voice-feedback">Save feedback</button></div></div></div>`;
   render();
   document.querySelector("#submit-voice-feedback")?.addEventListener("click", () => {
     const reason = document.querySelector("#voice-feedback-reason")?.value.trim();
-    sendDraftFeedback(id, sentiment, reason || "The draft does not match my voice yet");
+    const selectedTags = [...document.querySelectorAll('[data-feedback-tag][aria-pressed="true"]')].map((button) => button.dataset.feedbackTag);
+    sendDraftFeedback(id, sentiment, reason || "The draft does not match my voice yet", selectedTags);
   });
 }
 
-async function sendDraftFeedback(id, sentiment, reason = null) {
+async function sendDraftFeedback(id, sentiment, reason = null, tags = []) {
   try {
     await api(`/api/drafts/${id}/feedback`, {
       method: "POST",
-      body: JSON.stringify({ sentiment, reason }),
+      body: JSON.stringify({ sentiment, reason, tags }),
     });
     ui.modal = null;
     await refresh();
@@ -2674,6 +2724,13 @@ async function copyAndOpenLinkedIn(id) {
     if (publishResult.published) {
       await refresh();
       showToast("Published to LinkedIn");
+      return;
+    }
+    if (publishResult.mode === "quality_blocked") {
+      await refresh();
+      ui.reviewDraftId = id;
+      render();
+      showToast(publishResult.message || "Review the quality blockers before publishing");
       return;
     }
     let copied = false;

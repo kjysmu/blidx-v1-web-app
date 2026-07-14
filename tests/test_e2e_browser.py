@@ -257,6 +257,9 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     settings_page.get_by_text("Account", exact=True).wait_for()
     settings_page.get_by_text("Email verified", exact=True).wait_for()
     settings_page.get_by_text("Mira profile details").wait_for()
+    voice_calibration = settings_page.locator('[data-testid="voice-calibration"]')
+    voice_calibration.wait_for()
+    voice_calibration.get_by_text("Learning", exact=True).wait_for()
     settings_page.get_by_text("Help & feedback", exact=True).wait_for()
     assert settings_page.get_by_text("System / staging", exact=True).count() == 0
     assert settings_page.get_by_text("PayloadCMS review", exact=True).count() == 0

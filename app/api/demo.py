@@ -86,6 +86,16 @@ class LinkedInTrackPayload(BaseModel):
 class DraftFeedbackPayload(BaseModel):
     sentiment: Literal["sounds_like_me", "needs_work"]
     reason: str | None = Field(default=None, max_length=500)
+    tags: list[
+        Literal[
+            "too_formal",
+            "too_generic",
+            "too_polished",
+            "wrong_emphasis",
+            "too_long",
+            "too_salesy",
+        ]
+    ] = Field(default_factory=list, max_length=6)
 
 
 class OnboardingPayload(BaseModel):
@@ -242,6 +252,7 @@ def record_draft_feedback(draft_id: str, payload: DraftFeedbackPayload) -> dict[
         draft_id,
         payload.sentiment,
         payload.reason,
+        payload.tags,
     )
     if feedback is None:
         raise HTTPException(status_code=404, detail="Draft not found")

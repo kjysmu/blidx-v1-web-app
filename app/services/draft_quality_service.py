@@ -3,6 +3,8 @@ from collections import Counter
 from copy import deepcopy
 from typing import Any
 
+from app.services.voice_profile_service import VoiceProfileService
+
 
 STOP_WORDS = {
     "about", "after", "again", "also", "because", "before", "being", "between",
@@ -14,6 +16,14 @@ STOP_WORDS = {
 
 class DraftQualityService:
     DIMENSION_MAX = 5
+    FEEDBACK_TAG_GUIDANCE = {
+        "too_formal": "Use plainer, more conversational language.",
+        "too_generic": "Ground the next draft in a selected source or one concrete detail.",
+        "too_polished": "Leave more natural variation and remove overly neat AI-style phrasing.",
+        "wrong_emphasis": "Keep the user's requested topic and chosen angle central.",
+        "too_long": "Make the next draft shorter and remove repeated setup.",
+        "too_salesy": "Reduce promotion and lead with a useful observation instead.",
+    }
 
     @classmethod
     def evaluate(
@@ -25,14 +35,14 @@ class DraftQualityService:
         content = (post.get("content") or "").strip()
         profile = state.get("profile") or {}
         topic = post.get("topic") or post.get("title") or ""
-        sources = post.get("sources") or []
+        sources = cls._source_entries(state, post)
         context = " ".join(
             [topic, str(profile), *(item.get("raw_text") or item.get("excerpt") or "" for item in sources)]
         )
 
         dimensions = [
             cls._topic_fidelity(topic, content),
-            cls._voice_fidelity(profile.get("writing_samples") or [], content),
+            cls._voice_fidelity(profile, content),
             cls._specificity(sources, content),
             cls._factual_safety(context, content),
             cls._structure_variety(state, post, content),
@@ -40,13 +50,29 @@ class DraftQualityService:
         ]
         score = sum(item["score"] for item in dimensions)
         maximum = len(dimensions) * cls.DIMENSION_MAX
-        blockers = [item["label"] for item in dimensions if item["score"] <= 2]
+        hard_blockers = [
+            item["label"]
+            for item in dimensions
+            if item["id"] in {"topic_fidelity", "factual_safety"} and item["score"] <= 2
+        ]
+        warnings = [
+            item["label"]
+            for item in dimensions
+            if item["score"] <= 2 and item["label"] not in hard_blockers
+        ]
+        gate_status = "blocked" if hard_blockers else "review" if warnings else "ready"
         return {
             "dimension_score": score,
             "dimension_max": maximum,
             "readiness_percent": round(score / maximum * 100) if maximum else 0,
             "dimensions": dimensions,
-            "blockers": blockers,
+            "blockers": hard_blockers,
+            "warnings": warnings,
+            "quality_gate": {
+                "status": gate_status,
+                "blockers": hard_blockers,
+                "warnings": warnings,
+            },
         }
 
     @classmethod
@@ -81,6 +107,10 @@ class DraftQualityService:
                 label = "matched voice" if item.get("sentiment") == "sounds_like_me" else "missed voice"
                 detail = f": {item['reason'][:180]}" if item.get("reason") else ""
                 useful.append(f"User said draft {label}{detail}")
+                for tag in (item.get("metadata") or {}).get("tags") or []:
+                    guidance = DraftQualityService.FEEDBACK_TAG_GUIDANCE.get(tag)
+                    if guidance:
+                        useful.append(f"Learned voice rule: {guidance}")
             elif item.get("event") == "rejected":
                 useful.append(f"User rejected draft: {(item.get('reason') or 'no reason supplied')[:180]}")
             if len(useful) >= limit:
@@ -100,24 +130,15 @@ class DraftQualityService:
         )
 
     @classmethod
-    def _voice_fidelity(cls, samples: list[str], content: str) -> dict[str, Any]:
-        if not samples:
-            return cls._dimension("voice_fidelity", "Voice fidelity", 2, "Add writing samples to measure founder voice reliably.")
-        sample = "\n\n".join(samples)
-        matches = 0
-        matches += cls._has_first_person(sample) == cls._has_first_person(content)
-        matches += ("?" in sample) == ("?" in content)
-        matches += cls._has_numbered_list(sample) == cls._has_numbered_list(content)
-        matches += cls._sentence_length_band(sample) == cls._sentence_length_band(content)
-        matches += cls._paragraph_length_band(sample) == cls._paragraph_length_band(content)
+    def _voice_fidelity(cls, profile: dict[str, Any], content: str) -> dict[str, Any]:
+        matches, detail = VoiceProfileService.match(profile, content)
         return cls._dimension(
-            "voice_fidelity", "Voice fidelity", int(matches),
-            "Structure and rhythm resemble the supplied writing samples." if matches >= 4 else "The rhythm or structure differs from the founder's writing samples.",
+            "voice_fidelity", "Voice fidelity", matches, detail,
         )
 
     @classmethod
     def _specificity(cls, sources: list[dict], content: str) -> dict[str, Any]:
-        source_text = " ".join(item.get("raw_text") or "" for item in sources)
+        source_text = " ".join(item.get("raw_text") or item.get("excerpt") or "" for item in sources)
         overlap = len(cls._terms(source_text) & cls._terms(content))
         concrete = bool(re.search(r"\b\d+(?:[.,]\d+)?%?(?![\d/])", content))
         score = min(5, (3 if sources else 1) + (1 if overlap >= 3 else 0) + (1 if concrete else 0))
@@ -136,6 +157,26 @@ class DraftQualityService:
         if unsupported:
             detail = "Verify unsupported numeric claims: " + ", ".join(unsupported[:3])
         return cls._dimension("factual_safety", "Factual safety", score, detail)
+
+    @staticmethod
+    def _source_entries(state: dict[str, Any], post: dict[str, Any]) -> list[dict[str, Any]]:
+        source_ids = set(post.get("source_ids") or [])
+        source_ids.update(
+            item.get("memory_id")
+            for item in post.get("sources") or []
+            if item.get("memory_id")
+        )
+        entries = [
+            entry
+            for entry in state.get("content_bank") or []
+            if entry.get("id") in source_ids
+        ]
+        entries.extend(
+            item
+            for item in post.get("sources") or []
+            if item.get("raw_text") or item.get("excerpt")
+        )
+        return entries
 
     @classmethod
     def _structure_variety(cls, state: dict[str, Any], post: dict, content: str) -> dict[str, Any]:

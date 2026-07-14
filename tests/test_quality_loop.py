@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.demo_store import DemoStore
+from app.demo_store import DemoStore, demo_store
 from app.main import app
 from app.quality_benchmarks import BENCHMARK_SCENARIOS
 from app.services.draft_quality_service import DraftQualityService
@@ -59,6 +59,8 @@ def test_quality_service_flags_unsupported_numeric_claims():
 
     assert factual["score"] == 1
     assert "73%" in factual["detail"]
+    assert review["quality_gate"]["status"] == "blocked"
+    assert review["quality_gate"]["blockers"] == ["Factual safety"]
 
 
 def test_quality_service_does_not_treat_numbered_lists_as_factual_claims():
@@ -75,6 +77,31 @@ def test_quality_service_does_not_treat_numbered_lists_as_factual_claims():
     factual = next(item for item in review["dimensions"] if item["id"] == "factual_safety")
 
     assert factual["score"] == 5
+
+
+def test_linkedin_publish_pauses_for_a_hard_quality_blocker():
+    client.post("/api/reset")
+    state = demo_store._read()
+    state["posts"].append(
+        {
+            "id": "blocked-post",
+            "topic": "AI in healthcare",
+            "title": "AI in healthcare",
+            "content": "AI improved healthcare outcomes by 73% across 400 clinics.",
+            "status": "pending",
+            "sources": [],
+            "source_ids": [],
+            "version": 1,
+        }
+    )
+    demo_store._write(state)
+
+    result = demo_store.publish_post("blocked-post")
+
+    assert result["published"] is False
+    assert result["mode"] == "quality_blocked"
+    assert result["blockers"] == ["Factual safety"]
+    client.post("/api/reset")
 
 
 def test_feedback_actions_build_a_workspace_quality_report():
