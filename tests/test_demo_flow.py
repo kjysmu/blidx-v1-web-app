@@ -324,6 +324,20 @@ def test_generic_ai_variants_are_rejected_for_an_unrelated_topic():
     assert DemoStore._parse_ai_variants(response, "pokemon", main) == []
 
 
+def test_accented_topic_keeps_all_three_grounded_variants():
+    main = (
+        "Pokémon keeps finding new audiences without shedding the old ones.\n\n"
+        "The core loop of catching, training, battling, and trading remains recognizable.\n\n"
+        "That continuity gives product builders something useful to study.\n\n"
+        "What other products have a core loop that aged this well?"
+    )
+
+    variants = DemoStore._grounded_variants_from_main("pokemon", main)
+
+    assert len(variants) == 3
+    assert all("pokemon" in DemoStore._topic_terms(variant["content"]) for variant in variants)
+
+
 def test_ai_draft_repairs_invented_personal_details(monkeypatch):
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
     responses = iter(

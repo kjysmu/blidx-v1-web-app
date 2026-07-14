@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import re
 import threading
+import unicodedata
 import uuid
 import zlib
 from copy import deepcopy
@@ -2138,10 +2139,12 @@ class DemoStore:
             return []
 
         closing = paragraphs[-1] if "?" in paragraphs[-1] else ""
-        concise_parts = paragraphs[: min(4, len(paragraphs))]
-        if closing and closing not in concise_parts:
+        concise_parts = paragraphs[: min(2, len(paragraphs))]
+        if closing and len(paragraphs) > 2 and closing not in concise_parts:
             concise_parts.append(closing)
         concise = "\n\n".join(concise_parts)
+        if concise.strip() == main_content.strip():
+            concise = f"{DemoStore._polish_title(topic)}, in short:\n\n{sentences[0]}"
 
         subject = DemoStore._polish_title(topic)
         observation_parts = [f"The part of {subject} worth paying attention to:"]
@@ -2489,6 +2492,10 @@ class DemoStore:
 
     @staticmethod
     def _topic_terms(text: str) -> set[str]:
+        normalized = unicodedata.normalize("NFKD", text)
+        normalized = "".join(
+            character for character in normalized if not unicodedata.combining(character)
+        )
         stopwords = {
             "about",
             "and",
@@ -2518,7 +2525,7 @@ class DemoStore:
         }
         return {
             word.strip(".,:;!?()[]{}\"'“”‘’").lower()
-            for word in text.split()
+            for word in normalized.split()
             if (
                 len(word.strip(".,:;!?()[]{}\"'“”‘’")) > 2
                 or word.strip(".,:;!?()[]{}\"'“”‘’").lower() in {"ai"}
