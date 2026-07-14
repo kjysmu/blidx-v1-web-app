@@ -148,6 +148,13 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
 
     fill_onboarding(page)
 
+    mira_avatar = page.locator(".mira-avatar img").first
+    mira_avatar.wait_for()
+    assert mira_avatar.get_attribute("src") == "/assets/mira-profile.jpg"
+    assert mira_avatar.evaluate(
+        "(image) => image.complete && image.naturalWidth === 200 && image.naturalHeight === 200"
+    )
+
     page.locator('[data-tab="bank"]').first.click()
     page.locator('[data-testid="bank-text"]').fill(
         "A founder told me they do not need another AI writing tool; they need help deciding which real work moment deserves a post."

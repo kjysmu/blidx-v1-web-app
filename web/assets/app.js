@@ -181,7 +181,7 @@ const icons = {
 };
 
 function miraAvatar(size = 38) {
-  return `<span class="mira-avatar" style="width:${size}px;height:${size}px" aria-hidden="true"><svg viewBox="0 0 40 40"><defs><linearGradient id="mira-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8073e3"/><stop offset="1" stop-color="#453a9e"/></linearGradient></defs><circle cx="20" cy="20" r="20" fill="url(#mira-grad)"/><text x="20" y="26.5" text-anchor="middle" font-family="DM Serif Display, serif" font-size="19" fill="#fff">M</text></svg></span>`;
+  return `<span class="mira-avatar" style="width:${size}px;height:${size}px" aria-hidden="true"><img src="/assets/mira-profile.jpg" alt="" /></span>`;
 }
 
 const navItems = [

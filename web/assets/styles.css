@@ -108,9 +108,10 @@ button, .input, textarea, select {
 .mira-id { display: flex; align-items: center; gap: 11px; }
 .mira-avatar {
   display: inline-block; flex: 0 0 auto; border-radius: 50%; overflow: hidden;
-  box-shadow: 0 1px 4px rgba(60, 52, 137, .25);
+  border: 1px solid rgba(85, 72, 184, .28);
+  box-shadow: 0 2px 7px rgba(60, 52, 137, .22);
 }
-.mira-avatar svg { display: block; width: 100%; height: 100%; }
+.mira-avatar img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .mira-name { font-weight: 700; }
 .online { color: var(--purple); font-size: 12px; font-weight: 600; }
 .top-actions { display: flex; gap: 9px; align-items: center; }

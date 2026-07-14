@@ -20,3 +20,11 @@ def test_root():
     )
     assert len(asset_versions) == 2
     assert len(set(asset_versions)) == 1
+
+
+def test_mira_profile_image():
+    response = client.get("/assets/mira-profile.jpg")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/jpeg"
+    assert len(response.content) > 1_000
