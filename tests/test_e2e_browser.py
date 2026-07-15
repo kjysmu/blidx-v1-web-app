@@ -237,6 +237,11 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
         has_text="how old are you?"
     )
     short_user_bubble.wait_for()
+    # Geometry assertions need the app stylesheet applied; under suite load
+    # it can lag the DOM, and unstyled line-height computes as "normal".
+    page.wait_for_function(
+        "getComputedStyle(document.body).lineHeight !== 'normal'"
+    )
     short_message_metrics = short_user_bubble.evaluate(
         """(element) => {
             const paragraph = element.querySelector("p");
