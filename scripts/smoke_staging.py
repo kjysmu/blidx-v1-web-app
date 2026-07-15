@@ -9,6 +9,7 @@ Usage:
 """
 import json
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -24,7 +25,14 @@ def check(passed: bool, label: str, detail: str = "") -> bool:
     return passed
 
 
-def request(base: str, path: str, data=None, token: str | None = None, method: str | None = None):
+def request(
+    base: str,
+    path: str,
+    data=None,
+    token: str | None = None,
+    method: str | None = None,
+    timeout: int = 30,
+):
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -34,7 +42,7 @@ def request(base: str, path: str, data=None, token: str | None = None, method: s
         headers=headers,
         method=method or ("POST" if data is not None else "GET"),
     )
-    with urllib.request.urlopen(req, timeout=30) as response:
+    with urllib.request.urlopen(req, timeout=timeout) as response:
         body = response.read().decode()
         return response.status, json.loads(body) if body.strip().startswith(("{", "[")) else body
 
@@ -116,13 +124,31 @@ def main() -> int:
 
     status, chat = request(base, "/api/chat/message", {
         "message": "What should I post about today?",
-    }, token=token)
+    }, token=token, timeout=60)
     check(status == 200 and bool(chat.get("reply")), "chat message gets a Mira reply")
 
-    status, draft = request(base, "/api/drafts", {"topic": "smoke test founder lessons"}, token=token)
+    draft_started = time.monotonic()
+    status, draft = request(
+        base,
+        "/api/drafts",
+        {"topic": "smoke test founder lessons"},
+        token=token,
+        timeout=90,
+    )
+    draft_seconds = time.monotonic() - draft_started
     post = draft.get("post") or draft
     provider = post.get("generation_provider", "unknown")
     check(status == 200 and post.get("status") == "pending", "draft generation", f"provider: {provider}")
+    check(
+        draft_seconds <= 60,
+        "draft responds within 60 seconds",
+        f"{draft_seconds:.1f}s",
+    )
+    check(
+        len(post.get("variants") or []) == 3,
+        "draft includes three review variants",
+        f"{len(post.get('variants') or [])} variant(s)",
+    )
     if anthropic_ok:
         check(provider != "template", "draft used Claude, not the template fallback", provider)
 
@@ -178,6 +204,6 @@ def finish() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except urllib.error.URLError as exc:
+    except (TimeoutError, urllib.error.URLError) as exc:
         print(f"[FAIL] could not reach the service: {exc}")
         sys.exit(1)
