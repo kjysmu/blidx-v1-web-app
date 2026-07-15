@@ -61,12 +61,26 @@ The initial schema includes:
 
 ## Tests
 
+Run the required pre-deployment release gate:
+
+```bash
+pip install -r requirements-dev.txt
+python -m playwright install chromium
+python scripts/release_gate.py
+```
+
+The gate first proves that Chromium can launch, then runs the complete API,
+security, integration, quality, and browser suite. It fails instead of silently
+skipping browser coverage when Playwright is missing. GitHub Actions runs the
+same command for every pull request and every push to `main`.
+
+For a quick test run during development:
+
 ```bash
 pytest
 ```
 
-For browser-level QA of the full signup/onboarding/Content Bank/Mira/draft
-workflow:
+For browser-level QA only:
 
 ```bash
 pip install -r requirements-dev.txt

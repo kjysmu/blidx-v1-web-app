@@ -3,6 +3,7 @@ services:
     name: blidx-v1-web-app
     runtime: python
     plan: starter
+    autoDeployTrigger: checksPass
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health

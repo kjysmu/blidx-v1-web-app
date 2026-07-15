@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import socket
@@ -237,22 +238,23 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
         has_text="how old are you?"
     )
     short_user_bubble.wait_for()
-    # Geometry assertions need the app stylesheet applied; under suite load
-    # it can lag the DOM, and unstyled line-height computes as "normal".
-    page.wait_for_function(
-        "getComputedStyle(document.body).lineHeight !== 'normal'"
-    )
+    page.locator(".bubble.typing").wait_for(state="detached")
     short_message_metrics = short_user_bubble.evaluate(
         """(element) => {
             const paragraph = element.querySelector("p");
+            const range = document.createRange();
+            range.selectNodeContents(paragraph);
+            const textRects = [...range.getClientRects()].filter(
+                (rect) => rect.width > 0 && rect.height > 0
+            );
             return {
-                height: paragraph.getBoundingClientRect().height,
-                lineHeight: Number.parseFloat(getComputedStyle(paragraph).lineHeight),
+                width: paragraph.getBoundingClientRect().width,
+                lineCount: textRects.length,
             };
         }"""
     )
-    assert short_message_metrics["height"] <= short_message_metrics["lineHeight"] + 1
-    page.locator(".bubble.typing").wait_for(state="detached")
+    assert short_message_metrics["width"] > 0
+    assert short_message_metrics["lineCount"] == 1
 
     chat_input.fill("Give me 3 angles from my Content Bank")
     page.locator('[data-testid="chat-send"]').click()
@@ -372,6 +374,143 @@ def test_authenticated_golden_path_in_browser(live_server, browser):
     page.get_by_text(
         "All devices were logged out. Sign in again to continue."
     ).wait_for()
+
+    context.close()
+
+
+def test_content_bank_lifecycle_and_topic_grounded_variants(live_server, browser):
+    context = browser.new_context()
+    page = context.new_page()
+    email = f"grounding-{uuid.uuid4().hex}@example.com"
+    page.goto(live_server)
+
+    sign_up_verify_and_login(page, email, "Grounding Tester")
+    fill_onboarding(page)
+
+    page.locator('[data-tab="bank"]').first.click()
+    original_note = (
+        "A founder interview showed that users need help choosing the strongest idea "
+        "before they need help writing it."
+    )
+    edited_note = (
+        "A founder interview showed that users need editorial judgment before they need "
+        "another writing interface."
+    )
+    page.locator('[data-testid="bank-text"]').fill(original_note)
+    page.locator('[data-testid="bank-save"]').click()
+    page.get_by_text("Saved and selected for Mira").wait_for()
+
+    memory_card = page.locator(".memory-card").filter(has_text=original_note)
+    memory_card.wait_for()
+    memory_card.locator("summary", has_text="Edit source text").click()
+    memory_card.locator('textarea[name="raw_text"]').fill(edited_note)
+    memory_card.get_by_role("button", name="Save changes").click()
+    page.get_by_text("Content Bank entry updated.").wait_for()
+
+    edited_card = page.locator(".memory-card").filter(has_text=edited_note)
+    edited_card.wait_for()
+    edited_card.get_by_role("button", name="Delete").click()
+    page.locator('[role="status"]').filter(has_text="Memory deleted").wait_for()
+    edited_card.wait_for(state="detached")
+
+    page.locator("#toast-action").click()
+    page.locator('[role="status"]').filter(has_text="Memory restored").wait_for()
+    restored_card = page.locator(".memory-card").filter(has_text=edited_note)
+    restored_card.wait_for()
+    assert "1/5 sources selected for Mira" in page.locator(
+        '[data-testid="source-selection-bar"]'
+    ).inner_text()
+    page.get_by_role("button", name="Clear", exact=True).click()
+    assert "0/5 sources selected for Mira" in page.locator(
+        '[data-testid="source-selection-bar"]'
+    ).inner_text()
+
+    page.locator('[data-tab="chat"]').first.click()
+    chat_input = page.locator('[data-testid="chat-message"]')
+    chat_input.fill("draft about pokemon")
+    page.locator('[data-testid="chat-send"]').click()
+    page.locator(".msg.mira").filter(has_text="just draft it").last.wait_for()
+
+    chat_input.fill("just draft it")
+    page.locator('[data-testid="chat-send"]').click()
+    draft_card = page.locator('[data-testid="draft-card"]').first
+    draft_card.wait_for(timeout=10000)
+    draft_card.locator('[data-testid="open-draft-workspace"]').click()
+
+    draft_modal = page.locator('[data-testid="draft-review-modal"]')
+    draft_modal.wait_for()
+    variant_cards = draft_modal.locator(".variant-card")
+    variant_cards.first.wait_for()
+    assert variant_cards.count() == 3
+    forbidden = (
+        "not mainly a writing problem",
+        "founder-led content",
+        "capture the real moment",
+        "turn real work into a clear point of view",
+    )
+    for variant_text in variant_cards.all_inner_texts():
+        lowered = variant_text.lower()
+        assert "pokemon" in lowered or "pokémon" in lowered
+        assert all(phrase not in lowered for phrase in forbidden)
+
+    draft_modal.get_by_role("button", name="Use this variant").first.click()
+    page.locator('[role="status"]').filter(has_text="Variant applied").wait_for()
+    draft_modal.get_by_role("button", name="Using this").wait_for()
+    draft_modal.locator('[data-testid="save-draft"]').click()
+    page.locator('[role="status"]').filter(has_text="Saved to Library").wait_for()
+
+    page.locator('[data-tab="library"]').first.click()
+    library_page = page.locator('[data-testid="library-page"]')
+    library_page.wait_for()
+    library_page.locator("#library-search").fill("Pokemon")
+    library_item = library_page.locator(".list-item").filter(has_text="Pokemon")
+    library_item.wait_for()
+    library_item.get_by_text("saved", exact=True).wait_for()
+    library_item.get_by_text("Open draft workspace", exact=True).wait_for()
+
+    context.close()
+
+
+def test_chat_failure_restores_message_and_allows_retry(live_server, browser):
+    context = browser.new_context()
+    page = context.new_page()
+    email = f"retry-{uuid.uuid4().hex}@example.com"
+    page.goto(live_server)
+
+    sign_up_verify_and_login(page, email, "Retry Tester")
+    fill_onboarding(page)
+
+    failure_message = "Mira is temporarily unavailable. Please try again."
+
+    def fail_chat(route):
+        route.fulfill(
+            status=503,
+            content_type="application/json",
+            body=json.dumps({"detail": failure_message}),
+        )
+
+    page.route("**/api/chat/message", fail_chat)
+    chat_input = page.locator('[data-testid="chat-message"]')
+    chat_input.fill("hello Mira")
+    page.locator('[data-testid="chat-send"]').click()
+
+    page.locator('[role="status"]').filter(has_text=failure_message).wait_for()
+    assert chat_input.input_value() == "hello Mira"
+    assert page.locator('[data-testid="chat-send"]').is_enabled()
+    assert page.locator(".bubble.typing").count() == 0
+
+    page.unroute("**/api/chat/message", fail_chat)
+    mira_count = page.locator(".msg.mira").count()
+    page.locator('[data-testid="chat-send"]').click()
+    page.wait_for_function(
+        """(previousCount) =>
+            document.querySelectorAll('.msg.mira').length > previousCount
+            && !document.querySelector('.bubble.typing')""",
+        arg=mira_count,
+    )
+    page.locator(".msg.user .bubble").filter(has_text="hello Mira").wait_for()
+    assert chat_input.input_value() == ""
+    assert page.locator('[data-testid="chat-send"]').is_enabled()
 
     context.close()
 

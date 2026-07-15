@@ -53,11 +53,20 @@ uses LinkedIn's versioned `/rest/posts` API with `w_member_social`.
 
 ## Every deploy
 
-1. Push to `main` (or click Manual Deploy). Render builds with
+1. **Run the required local gate before pushing:**
+
+   ```bash
+   python scripts/release_gate.py
+   ```
+
+2. Push to `main`. GitHub Actions reruns the same gate in a clean Linux
+   environment. The Blueprint sets `autoDeployTrigger: checksPass`, so Render
+   waits for that CI check instead of deploying an unverified commit.
+3. Render builds with
    `pip install -r requirements.txt` and starts
    `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
-2. Wait for the health check to go green.
-3. **Run the smoke test** against the live URL:
+4. Wait for the health check to go green.
+5. **Run the smoke test** against the live URL:
 
    ```bash
    python scripts/smoke_staging.py https://<service>.onrender.com
